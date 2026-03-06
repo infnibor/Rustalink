@@ -264,10 +264,7 @@ pub fn extract_thumbnail(renderer: &Value, video_id: Option<&str>) -> Option<Str
             .iter()
             .max_by_key(|t| t.get("width").and_then(|w| w.as_u64()).unwrap_or(0));
 
-        if let Some(url) = best
-            .and_then(|t| t.get("url"))
-            .and_then(|u| u.as_str())
-        {
+        if let Some(url) = best.and_then(|t| t.get("url")).and_then(|u| u.as_str()) {
             // Upgrade small thumbnails to maxresdefault when possible.
             let clean = url.split('?').next().unwrap_or(url);
             if clean.contains("i.ytimg.com") {
@@ -311,13 +308,13 @@ pub async fn make_player_request(opts: PlayerRequestOptions<'_>) -> AnyResult<Va
         "racyCheckOk": true
     });
 
-    if opts.serialized_third_party_embed_config {
-        if let Some(obj) = body.as_object_mut() {
-            obj.insert(
-                "serializedThirdPartyEmbedConfig".to_string(),
-                "{\"hideInfoBar\":true,\"disableRelatedVideos\":true}".into(),
-            );
-        }
+    if opts.serialized_third_party_embed_config
+        && let Some(obj) = body.as_object_mut()
+    {
+        obj.insert(
+            "serializedThirdPartyEmbedConfig".to_string(),
+            "{\"hideInfoBar\":true,\"disableRelatedVideos\":true}".into(),
+        );
     }
 
     if let Some(token) = opts.po_token
@@ -348,21 +345,21 @@ pub async fn make_player_request(opts: PlayerRequestOptions<'_>) -> AnyResult<Va
         );
     }
 
-    if let Some(flags) = opts.encrypted_host_flags {
-        if let Some(obj) = body.as_object_mut() {
-            let playback_context = obj
-                .entry("playbackContext".to_string())
-                .or_insert_with(|| json!({}));
-            let content_playback_context = playback_context
-                .as_object_mut()
-                .unwrap()
-                .entry("contentPlaybackContext".to_string())
-                .or_insert_with(|| json!({}));
-            content_playback_context
-                .as_object_mut()
-                .unwrap()
-                .insert("encryptedHostFlags".to_string(), flags.into());
-        }
+    if let Some(flags) = opts.encrypted_host_flags
+        && let Some(obj) = body.as_object_mut()
+    {
+        let playback_context = obj
+            .entry("playbackContext".to_string())
+            .or_insert_with(|| json!({}));
+        let content_playback_context = playback_context
+            .as_object_mut()
+            .unwrap()
+            .entry("contentPlaybackContext".to_string())
+            .or_insert_with(|| json!({}));
+        content_playback_context
+            .as_object_mut()
+            .unwrap()
+            .insert("encryptedHostFlags".to_string(), flags.into());
     }
 
     let url = format!("{}/youtubei/v1/player?prettyPrint=false", INNERTUBE_API);

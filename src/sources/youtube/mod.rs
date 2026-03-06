@@ -37,8 +37,8 @@ pub struct YouTubeSource {
     search_prefixes: Vec<String>,
     rec_prefixes: Vec<String>,
     url_regex: Regex,
-    // Store clients separated by function
     search_clients: Vec<Arc<dyn YouTubeClient>>,
+    music_search_clients: Vec<Arc<dyn YouTubeClient>>,
     playback_clients: Vec<Arc<dyn YouTubeClient>>,
     resolve_clients: Vec<Arc<dyn YouTubeClient>>,
     oauth: Arc<YouTubeOAuth>,
@@ -168,6 +168,11 @@ impl YouTubeSource {
             resolve_clients.push(Arc::new(WebClient::new(http.clone())));
         }
 
+        let music_search_clients: Vec<Arc<dyn YouTubeClient>> = vec![
+            Arc::new(MusicAndroidClient::new(http.clone())),
+            Arc::new(WebRemixClient::new(http.clone())),
+        ];
+
         tracing::info!(
             "YouTube source initialized with {} search, {} playback, and {} resolve clients.",
             search_clients.len(),
@@ -180,6 +185,7 @@ impl YouTubeSource {
             rec_prefixes: vec!["ytrec:".to_string()],
             url_regex: Regex::new(r"(?:youtube\.com|youtu\.be)").unwrap(),
             search_clients,
+            music_search_clients,
             playback_clients,
             resolve_clients,
             oauth,
@@ -449,14 +455,18 @@ impl YouTubeSource {
         let prefer_music = prefix == "ytmsearch:";
         let query = &identifier[prefix.len()..];
 
-        let is_music = |c: &Arc<dyn YouTubeClient>| {
-            c.name().contains("Music") || c.name().contains("Remix")
-        };
+        let is_music =
+            |c: &Arc<dyn YouTubeClient>| c.name().contains("Music") || c.name().contains("Remix");
 
         if prefer_music {
-            // Collect all music-tagged clients across all pools, deduped.
-            let mut seen = std::collections::HashSet::new();
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
             let mut music_clients: Vec<&Arc<dyn YouTubeClient>> = Vec::new();
+
+            for c in &self.music_search_clients {
+                if seen.insert(c.name()) {
+                    music_clients.push(c);
+                }
+            }
             for pool in [
                 &self.search_clients[..],
                 &self.resolve_clients[..],
@@ -484,8 +494,8 @@ impl YouTubeSource {
             );
         }
 
-        // ytsearch: try configured search clients, then fallback to any remaining client.
-        let primary = self.prioritize_clients(&self.search_clients, false);
+        let primary: Vec<&Arc<dyn YouTubeClient>> =
+            self.search_clients.iter().filter(|c| !is_music(c)).collect();
         for client in &primary {
             tracing::debug!("Searching '{}' with {}", query, client.name());
             match client.search(query, context, self.oauth.clone()).await {
@@ -595,7 +605,7 @@ impl YouTubeSource {
                             tracks,
                         });
                     }
-            _ => continue,
+                    _ => continue,
                 }
             }
         }
@@ -611,8 +621,7 @@ impl YouTubeSource {
             {
                 Ok(Some(mut track)) => {
                     if is_music_url {
-                        track.info.uri =
-                            Some(format!("https://music.youtube.com/watch?v={}", id));
+                        track.info.uri = Some(format!("https://music.youtube.com/watch?v={}", id));
                     }
                     return LoadResult::Track(track);
                 }
@@ -637,8 +646,7 @@ impl YouTubeSource {
                 .await
             {
                 if is_music_url {
-                    track.info.uri =
-                        Some(format!("https://music.youtube.com/watch?v={}", id));
+                    track.info.uri = Some(format!("https://music.youtube.com/watch?v={}", id));
                 }
                 return LoadResult::Track(track);
             }
