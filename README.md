@@ -22,7 +22,7 @@
 
 Rustalink is a standalone audio sending node optimized for modern Discord bots. It provides a robust, low-latency bridge between your bot and multiple audio providers, following the Lavalink v4 specification for seamless integration.
 
-## Capabilities
+## Features
 
 Our core engine is built for efficiency, allowing thousands of concurrent streams with minimal resource consumption.
 
@@ -78,10 +78,6 @@ docker run -d \
   ghcr.io/bongodevs/rustalink:latest
 ```
 
-### Documentation & API
-Detailed guides, TOML configuration references, and full API documentation are available at:
-
-**[soon](https://soon.gg)**
 
 ## Credits & Inspiration
 
