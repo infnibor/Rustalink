@@ -494,8 +494,11 @@ impl YouTubeSource {
             );
         }
 
-        let primary: Vec<&Arc<dyn YouTubeClient>> =
-            self.search_clients.iter().filter(|c| !is_music(c)).collect();
+        let primary: Vec<&Arc<dyn YouTubeClient>> = self
+            .search_clients
+            .iter()
+            .filter(|c| !is_music(c))
+            .collect();
         for client in &primary {
             tracing::debug!("Searching '{}' with {}", query, client.name());
             match client.search(query, context, self.oauth.clone()).await {
