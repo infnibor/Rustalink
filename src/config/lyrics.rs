@@ -1,16 +1,22 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
-#[serde(default)]
 pub struct LyricsConfig {
+    #[serde(default)]
     pub youtubemusic: bool,
+    #[serde(default)]
     pub lrclib: bool,
+    #[serde(default)]
     pub genius: bool,
+    #[serde(default)]
     pub deezer: bool,
-    pub bilibili: bool,
+    #[serde(default)]
     pub musixmatch: bool,
+    #[serde(default)]
     pub letrasmus: bool,
+    #[serde(default)]
     pub yandex: bool,
+    #[serde(default)]
     pub netease: bool,
 }
 

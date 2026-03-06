@@ -14,6 +14,8 @@ pub struct PlayerConfig {
     pub opus_encoding_quality: u8,
     #[serde(default)]
     pub tape: TapeConfig,
+    #[serde(default)]
+    pub mirrors: Option<crate::config::server::MirrorsConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default, Copy, PartialEq)]
@@ -63,6 +65,7 @@ impl Default for PlayerConfig {
             resampling_quality: ResamplingQuality::default(),
             opus_encoding_quality: default_opus_encoding_quality(),
             tape: TapeConfig::default(),
+            mirrors: None,
         }
     }
 }
@@ -80,19 +83,15 @@ impl Default for TapeConfig {
 fn default_stuck_threshold_ms() -> u64 {
     10000
 }
-
 fn default_buffer_duration_ms() -> u64 {
     400
 }
-
 fn default_frame_buffer_duration_ms() -> u64 {
     5000
 }
-
 fn default_opus_encoding_quality() -> u8 {
     10
 }
-
 fn default_tape_stop_duration_ms() -> u64 {
     500
 }

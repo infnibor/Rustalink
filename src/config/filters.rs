@@ -1,3 +1,4 @@
+use super::sources::default_true;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -42,10 +43,6 @@ pub struct FiltersConfig {
     pub reverb: bool,
     #[serde(default = "default_true")]
     pub spatial: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for FiltersConfig {
