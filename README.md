@@ -60,7 +60,6 @@ Rustalink supports direct playback and **Mirroring**. Mirroring allows playback 
 | **HTTP / Local**| Direct | - | - |
 | **Google TTS**| Direct | `gtts:`, `speak:` | `gtts://lang:text` to override language |
 | **Flowery TTS**| Direct | `ftts:` | `ftts://` pattern supported. Override parameters via query `?voice=...` |
-| **LazyPy TTS**| Direct | `lazypytts:`, `lazytts:` | `lazypytts://` pattern supported. Override via format `lazypytts:Service:Voice:Text` |
 
 > [!TIP]
 > **Hybrid** sources support direct playback if credentials are provided. Otherwise, they seamlessly fall back to mirroring.
@@ -106,7 +105,7 @@ Bypass restrictions by switching between specialized clients:
 | `IOS` | ✅ | ✅ | ✅ |
 | `TV` / `TVHTML5` | ✅ | ✅ | ✅ |
 | `TV_CAST` / `TVHTML5_CAST` | ✅ | ✅ | ✅ |
-| `TV_EMBEDDED` / `TVHTML5_EMBEDDED` / `TVHTML5_SIMPLY_EMBEDDED_PLAYER` | ✅ | ✅ | ✅ |
+| `TV_EMBEDDED` | ✅ | ✅ | ✅ |
 | `MUSIC_ANDROID` / `MUSIC` / `ANDROID_MUSIC` | ✅ | ✅ | ✅ |
 | `ANDROID_VR` / `ANDROIDVR` | ✅ | ❌ | ✅ |
 | `WEB_EMBEDDED` / `WEBEMBEDDED` | ✅ | ❌ | ✅ |
@@ -198,8 +197,6 @@ Rustalink is an independent reimplementation in Rust and does not copy source co
 
 - **[Lavalink](https://github.com/lavalink-devs/Lavalink)** *(MIT License)* — The original standalone audio node. Rustalink implements the Lavalink v4 protocol and draws inspiration from its player management, session handling, and event emission design.
 - **[NodeLink](https://github.com/PerformanC/NodeLink)** *(GPL-3.0)* — Lightweight Lavalink alternative by PerformanC. Inspired Rustalink's approach to source handling and route planning.
-
-See [NOTICE](./NOTICE) for full third-party attribution details.
 
 ---
 
