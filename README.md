@@ -91,7 +91,7 @@ docker pull ghcr.io/bongodevs/rustalink:latest
 
 # 2. Setup config
 mkdir rustalink && cd rustalink
-docker run --rm ghcr.io/bongodevs/rustalink:latest cat config.default.toml > config.toml
+docker run --rm ghcr.io/bongodevs/rustalink:latest cat config.example.toml > config.toml
 
 # 3. Running with Docker Compose
 # Create a docker-compose.yml file:
