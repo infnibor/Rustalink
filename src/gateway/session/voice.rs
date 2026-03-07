@@ -31,7 +31,6 @@ pub async fn discover_ip(
     addr: SocketAddr,
     ssrc: u32,
 ) -> AnyResult<(String, u16)> {
-
     let mut packet = [0u8; DISCOVERY_PACKET_SIZE];
     packet[0..2].copy_from_slice(&1u16.to_be_bytes());
     packet[2..4].copy_from_slice(&70u16.to_be_bytes());
