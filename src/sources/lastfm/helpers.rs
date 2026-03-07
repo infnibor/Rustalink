@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use serde_json::Value;
 
 pub async fn get_json(client: &Arc<reqwest::Client>, url: &str) -> Option<Value> {
@@ -31,7 +32,11 @@ pub async fn get_json(client: &Arc<reqwest::Client>, url: &str) -> Option<Value>
         } else {
             url.to_owned()
         };
-        tracing::debug!("Last.fm: API returned error status {} for {}", res.status(), redacted);
+        tracing::debug!(
+            "Last.fm: API returned error status {} for {}",
+            res.status(),
+            redacted
+        );
         return None;
     }
 
@@ -49,7 +54,7 @@ pub fn unescape_html(input: &str) -> String {
             .replace("&#39;", "'")
             .replace("&apos;", "'")
             .replace("&#x27;", "'");
-        
+
         if next == result {
             break;
         }

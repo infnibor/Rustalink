@@ -46,7 +46,9 @@ fn vk_b64_decode(encoded: &str) -> String {
     let mut bits = 0u32;
 
     for ch in encoded.chars() {
-        let Some(pos) = table.iter().position(|&c| c == ch) else { continue };
+        let Some(pos) = table.iter().position(|&c| c == ch) else {
+            continue;
+        };
         acc = (acc << 6) | pos as u32;
         bits += 6;
 
@@ -63,5 +65,10 @@ pub fn extract_thumbnail(item: &Value) -> Option<String> {
     let thumb = &item["album"]["thumb"];
     ["photo_1200", "photo_600", "photo_300"]
         .iter()
-        .find_map(|&key| thumb[key].as_str().filter(|u| !u.is_empty()).map(String::from))
+        .find_map(|&key| {
+            thumb[key]
+                .as_str()
+                .filter(|u| !u.is_empty())
+                .map(String::from)
+        })
 }

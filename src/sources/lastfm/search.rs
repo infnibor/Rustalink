@@ -1,6 +1,7 @@
-
-
-use super::{LastFMSource, helpers::{get_json, unescape_html}};
+use super::{
+    LastFMSource,
+    helpers::{get_json, unescape_html},
+};
 use crate::protocol::tracks::{LoadResult, Track, TrackInfo};
 
 impl LastFMSource {
@@ -28,7 +29,10 @@ impl LastFMSource {
         let tracks = match json["results"]["trackmatches"]["track"].as_array() {
             Some(t) => t,
             None => {
-                tracing::debug!("Last.fm: API response missing trackmatches for search '{}'", query);
+                tracing::debug!(
+                    "Last.fm: API response missing trackmatches for search '{}'",
+                    query
+                );
                 return LoadResult::Empty {};
             }
         };
@@ -76,23 +80,33 @@ impl LastFMSource {
 
         let body = match self.http.get(&url).send().await {
             Ok(r) => r.text().await.unwrap_or_else(|e| {
-                tracing::debug!("Last.fm: failed to get response text for search scraping '{}': {}", query, e);
+                tracing::debug!(
+                    "Last.fm: failed to get response text for search scraping '{}': {}",
+                    query,
+                    e
+                );
                 Default::default()
             }),
             Err(e) => {
-                tracing::debug!("Last.fm: search scraping request failed for '{}': {}", query, e);
+                tracing::debug!(
+                    "Last.fm: search scraping request failed for '{}': {}",
+                    query,
+                    e
+                );
                 return LoadResult::Empty {};
             }
         };
 
         let mut results = Vec::new();
         for caps in crate::sources::lastfm::search_regex().captures_iter(&body) {
-            let artwork_url = caps.get(1).map(|m| m.as_str().replace("/64s/", "/300x300/"));
+            let artwork_url = caps
+                .get(1)
+                .map(|m| m.as_str().replace("/64s/", "/300x300/"));
             let title = unescape_html(caps.get(2).map(|m| m.as_str()).unwrap_or("Unknown"));
             let artist = unescape_html(caps.get(4).map(|m| m.as_str()).unwrap_or("Unknown"));
- 
+
             let full_url = crate::sources::lastfm::construct_track_url(&artist, &title);
- 
+
             results.push(Track::new(TrackInfo {
                 identifier: full_url.clone(),
                 is_seekable: true,
@@ -110,7 +124,11 @@ impl LastFMSource {
         }
 
         if results.is_empty() {
-            tracing::debug!("Last.fm: search scraping found no tracks for '{}' on page {}", query, url);
+            tracing::debug!(
+                "Last.fm: search scraping found no tracks for '{}' on page {}",
+                query,
+                url
+            );
             LoadResult::Empty {}
         } else {
             LoadResult::Search(results)

@@ -3,6 +3,7 @@ pub mod metadata;
 pub mod search;
 
 use std::sync::{Arc, OnceLock};
+
 use async_trait::async_trait;
 use regex::Regex;
 

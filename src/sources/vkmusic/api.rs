@@ -7,7 +7,8 @@ use tracing::{debug, error};
 const VK_API: &str = "https://api.vk.com/method";
 const VK_VERSION: &str = "5.199";
 const API_UA: &str = "KateMobileAndroid/56 lite-460 (Android 4.4.2; SDK 19; x86; unknown Android SDK built for x86; en)";
-const WEB_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0";
+const WEB_UA: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0";
 
 pub struct VkApiClient {
     pub client: Arc<reqwest::Client>,
@@ -38,17 +39,33 @@ impl VkApiClient {
             if code == 5 && self.cookie.is_some() {
                 *self.token.write().await = None;
                 let fresh = self.refresh_token().await?;
-                return self.do_request(method, &fresh, params).await.map(|b| b["response"].clone());
+                return self
+                    .do_request(method, &fresh, params)
+                    .await
+                    .map(|b| b["response"].clone());
             }
-            error!("VK API {}: {} — {}", method, code, body["error"]["error_msg"].as_str().unwrap_or(""));
+            error!(
+                "VK API {}: {} — {}",
+                method,
+                code,
+                body["error"]["error_msg"].as_str().unwrap_or("")
+            );
             return None;
         }
 
         Some(body["response"].clone())
     }
 
-    async fn do_request(&self, method: &str, token: &str, params: &[(&'static str, String)]) -> Option<Value> {
-        let mut url = format!("{}/{}?access_token={}&v={}", VK_API, method, token, VK_VERSION);
+    async fn do_request(
+        &self,
+        method: &str,
+        token: &str,
+        params: &[(&'static str, String)],
+    ) -> Option<Value> {
+        let mut url = format!(
+            "{}/{}?access_token={}&v={}",
+            VK_API, method, token, VK_VERSION
+        );
         for (k, v) in params {
             url.push('&');
             url.push_str(k);
@@ -56,7 +73,13 @@ impl VkApiClient {
             url.push_str(&urlencoding::encode(v));
         }
 
-        let resp = self.client.get(&url).header("User-Agent", API_UA).send().await.ok()?;
+        let resp = self
+            .client
+            .get(&url)
+            .header("User-Agent", API_UA)
+            .send()
+            .await
+            .ok()?;
         if !resp.status().is_success() {
             debug!("VK API {} -> HTTP {}", method, resp.status());
             return None;
@@ -78,7 +101,8 @@ impl VkApiClient {
         let cookie = self.cookie.as_deref()?;
         debug!("VK Music: refreshing token");
 
-        let resp = self.client
+        let resp = self
+            .client
             .post("https://login.vk.ru/?act=web_token")
             .header("User-Agent", WEB_UA)
             .header("Referer", "https://vk.ru/")
@@ -93,7 +117,12 @@ impl VkApiClient {
         let body: Value = resp.json().await.ok()?;
 
         if body.get("type").and_then(|t| t.as_str()) != Some("okay") {
-            error!("VK Music token refresh failed: {}", body.get("error_info").and_then(|e| e.as_str()).unwrap_or("unknown"));
+            error!(
+                "VK Music token refresh failed: {}",
+                body.get("error_info")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("unknown")
+            );
             return None;
         }
 

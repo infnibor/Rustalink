@@ -23,8 +23,8 @@ use super::{
     soundcloud::SoundCloudSource,
     spotify::SpotifySource,
     tidal::TidalSource,
-    yandexmusic::YandexMusicSource,
     vkmusic::VkMusicSource,
+    yandexmusic::YandexMusicSource,
     youtube::{YouTubeSource, YoutubeStreamContext, cipher::YouTubeCipherManager},
 };
 use crate::common::HttpClientPool;
@@ -437,10 +437,7 @@ impl SourceManager {
             }
 
             let proxy = c.proxy.clone();
-            match VkMusicSource::new(
-                config.sources.vkmusic.clone(),
-                http_pool.get(proxy.clone()),
-            ) {
+            match VkMusicSource::new(config.sources.vkmusic.clone(), http_pool.get(proxy.clone())) {
                 Ok(src) => {
                     tracing::info!("Loaded source: VK Music");
                     sources.push(Box::new(src));

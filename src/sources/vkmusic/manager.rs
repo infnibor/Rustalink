@@ -4,16 +4,15 @@ use async_trait::async_trait;
 use regex::Regex;
 use serde_json::{Value, json};
 
-use crate::{
-    config::VkMusicConfig,
-    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
-    sources::{SourcePlugin, plugin::BoxedTrack},
-};
-
 use super::{
     api::VkApiClient,
     track::VkMusicTrack,
     utils::{extract_thumbnail, unmask_vk_url},
+};
+use crate::{
+    config::VkMusicConfig,
+    protocol::tracks::{LoadResult, PlaylistData, PlaylistInfo, Track, TrackInfo},
+    sources::{SourcePlugin, plugin::BoxedTrack},
 };
 
 pub struct VkMusicSource {
@@ -33,7 +32,10 @@ pub struct VkMusicSource {
 }
 
 impl VkMusicSource {
-    pub fn new(config: Option<VkMusicConfig>, client: Arc<reqwest::Client>) -> Result<Self, String> {
+    pub fn new(
+        config: Option<VkMusicConfig>,
+        client: Arc<reqwest::Client>,
+    ) -> Result<Self, String> {
         let cfg = config.ok_or("VK Music configuration is missing")?;
 
         let api = VkApiClient::new(client, cfg.user_token.clone(), cfg.user_cookie.clone());
@@ -66,26 +68,42 @@ impl VkMusicSource {
     }
 
     async fn search(&self, q: &str) -> LoadResult {
-        let resp = self.api.call("audio.search", &[
-            ("q", q.to_string()),
-            ("count", self.search_limit.to_string()),
-            ("sort", "2".to_string()),
-        ]).await;
+        let resp = self
+            .api
+            .call(
+                "audio.search",
+                &[
+                    ("q", q.to_string()),
+                    ("count", self.search_limit.to_string()),
+                    ("sort", "2".to_string()),
+                ],
+            )
+            .await;
 
         match resp.as_ref().and_then(|r| r["items"].as_array()) {
             Some(items) if !items.is_empty() => {
                 let tracks: Vec<Track> = items.iter().filter_map(|i| self.build_track(i)).collect();
-                if tracks.is_empty() { LoadResult::Empty {} } else { LoadResult::Search(tracks) }
+                if tracks.is_empty() {
+                    LoadResult::Empty {}
+                } else {
+                    LoadResult::Search(tracks)
+                }
             }
             _ => LoadResult::Empty {},
         }
     }
 
     async fn recommendations(&self, target: &str) -> LoadResult {
-        let resp = self.api.call("audio.getRecommendations", &[
-            ("target_audio", target.to_string()),
-            ("count", self.rec_limit.to_string()),
-        ]).await;
+        let resp = self
+            .api
+            .call(
+                "audio.getRecommendations",
+                &[
+                    ("target_audio", target.to_string()),
+                    ("count", self.rec_limit.to_string()),
+                ],
+            )
+            .await;
 
         let items = match resp.as_ref().and_then(|r| r["items"].as_array()) {
             Some(arr) if !arr.is_empty() => arr.clone(),
@@ -98,7 +116,10 @@ impl VkMusicSource {
         }
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: "VK Music Recommendations".to_string(), selected_track: 0 },
+            info: PlaylistInfo {
+                name: "VK Music Recommendations".to_string(),
+                selected_track: 0,
+            },
             plugin_info: json!({ "type": "recommendations" }),
             tracks,
         })
@@ -134,22 +155,37 @@ impl VkMusicSource {
         }
 
         let meta = self.api.call("audio.getPlaylistById", &meta_params).await;
-        let title = meta.as_ref()
+        let title = meta
+            .as_ref()
             .and_then(|m| m["title"].as_str())
             .unwrap_or("VK Music Playlist")
             .to_string();
-        let pl_type = if meta.as_ref().and_then(|m| m["type"].as_i64()) == Some(1) { "album" } else { "playlist" };
+        let pl_type = if meta.as_ref().and_then(|m| m["type"].as_i64()) == Some(1) {
+            "album"
+        } else {
+            "playlist"
+        };
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: title, selected_track: 0 },
+            info: PlaylistInfo {
+                name: title,
+                selected_track: 0,
+            },
             plugin_info: json!({ "type": pl_type }),
             tracks,
         })
     }
 
     async fn load_track(&self, audio_id: &str) -> LoadResult {
-        let resp = self.api.call("audio.getById", &[("audios", audio_id.to_string())]).await;
-        match resp.as_ref().and_then(|r| r.as_array()).and_then(|a| a.first()) {
+        let resp = self
+            .api
+            .call("audio.getById", &[("audios", audio_id.to_string())])
+            .await;
+        match resp
+            .as_ref()
+            .and_then(|r| r.as_array())
+            .and_then(|a| a.first())
+        {
             Some(item) => match self.build_track(item) {
                 Some(t) => LoadResult::Track(t),
                 None => LoadResult::Empty {},
@@ -159,17 +195,33 @@ impl VkMusicSource {
     }
 
     async fn load_artist(&self, slug: &str) -> LoadResult {
-        let artist = self.api.call("audio.getArtistById", &[("artist_id", slug.to_string())]).await;
-        let artist_id = artist.as_ref()
-            .and_then(|r| r["id"].as_str().map(String::from)
-                .or_else(|| r["id"].as_i64().map(|n| n.to_string())));
-        let name = artist.as_ref().and_then(|r| r["name"].as_str()).unwrap_or(slug).to_string();
+        let artist = self
+            .api
+            .call("audio.getArtistById", &[("artist_id", slug.to_string())])
+            .await;
+        let artist_id = artist.as_ref().and_then(|r| {
+            r["id"]
+                .as_str()
+                .map(String::from)
+                .or_else(|| r["id"].as_i64().map(|n| n.to_string()))
+        });
+        let name = artist
+            .as_ref()
+            .and_then(|r| r["name"].as_str())
+            .unwrap_or(slug)
+            .to_string();
         let resolved_id = artist_id.as_deref().unwrap_or(slug);
 
-        let resp = self.api.call("audio.getAudiosByArtist", &[
-            ("artist_id", resolved_id.to_string()),
-            ("count", self.artist_track_limit.to_string()),
-        ]).await;
+        let resp = self
+            .api
+            .call(
+                "audio.getAudiosByArtist",
+                &[
+                    ("artist_id", resolved_id.to_string()),
+                    ("count", self.artist_track_limit.to_string()),
+                ],
+            )
+            .await;
 
         let items = match resp.as_ref().and_then(|r| r["items"].as_array()) {
             Some(arr) if !arr.is_empty() => arr.clone(),
@@ -182,17 +234,26 @@ impl VkMusicSource {
         }
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: format!("{}'s Top Tracks", name), selected_track: 0 },
+            info: PlaylistInfo {
+                name: format!("{}'s Top Tracks", name),
+                selected_track: 0,
+            },
             plugin_info: json!({ "type": "artist" }),
             tracks,
         })
     }
 
     async fn load_user_wall(&self, owner_id: &str) -> LoadResult {
-        let resp = self.api.call("audio.get", &[
-            ("owner_id", owner_id.to_string()),
-            ("count", self.playlist_track_limit.to_string()),
-        ]).await;
+        let resp = self
+            .api
+            .call(
+                "audio.get",
+                &[
+                    ("owner_id", owner_id.to_string()),
+                    ("count", self.playlist_track_limit.to_string()),
+                ],
+            )
+            .await;
 
         let items = match resp.as_ref().and_then(|r| r["items"].as_array()) {
             Some(arr) if !arr.is_empty() => arr.clone(),
@@ -205,20 +266,31 @@ impl VkMusicSource {
         }
 
         LoadResult::Playlist(PlaylistData {
-            info: PlaylistInfo { name: "VK Music".to_string(), selected_track: 0 },
+            info: PlaylistInfo {
+                name: "VK Music".to_string(),
+                selected_track: 0,
+            },
             plugin_info: json!({ "type": "playlist" }),
             tracks,
         })
     }
 
-    pub async fn resolve_stream_url(&self, audio_id: &str, access_key: Option<&str>) -> Option<String> {
+    pub async fn resolve_stream_url(
+        &self,
+        audio_id: &str,
+        access_key: Option<&str>,
+    ) -> Option<String> {
         let audios_param = match access_key {
             Some(k) => format!("{}_{}", audio_id, k),
             None => audio_id.to_string(),
         };
 
-        let resp = self.api.call("audio.getById", &[("audios", audios_param)]).await;
-        let raw_url = resp.as_ref()
+        let resp = self
+            .api
+            .call("audio.getById", &[("audios", audios_param)])
+            .await;
+        let raw_url = resp
+            .as_ref()
             .and_then(|r| r.as_array())
             .and_then(|arr| arr.first())
             .and_then(|item| item["url"].as_str())
@@ -237,7 +309,10 @@ impl VkMusicSource {
         Some(Track::new(TrackInfo {
             identifier: audio_id.clone(),
             is_seekable: true,
-            author: item["artist"].as_str().unwrap_or("Unknown Artist").to_string(),
+            author: item["artist"]
+                .as_str()
+                .unwrap_or("Unknown Artist")
+                .to_string(),
             length: item["duration"].as_u64().unwrap_or(0) * 1000,
             is_stream: false,
             position: 0,
@@ -261,7 +336,10 @@ impl VkMusicSource {
         };
 
         Some(PlaylistData {
-            info: PlaylistInfo { name: title.to_string(), selected_track: 0 },
+            info: PlaylistInfo {
+                name: title.to_string(),
+                selected_track: 0,
+            },
             plugin_info: json!({ "type": kind, "uri": uri }),
             tracks: Vec::new(),
         })
@@ -270,13 +348,21 @@ impl VkMusicSource {
     fn build_artist_entry(&self, item: &Value) -> Option<PlaylistData> {
         let name = item["name"].as_str()?;
         let domain = item["domain"].as_str().unwrap_or(name);
-        let artwork = item["photo"].as_array()
-            .and_then(|photos| photos.iter().max_by_key(|p| p["width"].as_u64().unwrap_or(0)))
+        let artwork = item["photo"]
+            .as_array()
+            .and_then(|photos| {
+                photos
+                    .iter()
+                    .max_by_key(|p| p["width"].as_u64().unwrap_or(0))
+            })
             .and_then(|p| p["url"].as_str())
             .map(String::from);
 
         Some(PlaylistData {
-            info: PlaylistInfo { name: format!("{}'s Top Tracks", name), selected_track: 0 },
+            info: PlaylistInfo {
+                name: format!("{}'s Top Tracks", name),
+                selected_track: 0,
+            },
             plugin_info: json!({ "type": "artist", "artworkUrl": artwork, "uri": format!("https://vk.com/artist/{}", domain) }),
             tracks: Vec::new(),
         })
@@ -312,24 +398,40 @@ impl SourcePlugin for VkMusicSource {
         identifier: &str,
         _routeplanner: Option<Arc<dyn crate::routeplanner::RoutePlanner>>,
     ) -> LoadResult {
-        if let Some(prefix) = self.search_prefixes.iter().find(|p| identifier.starts_with(p.as_str())) {
-            return self.search(identifier.strip_prefix(prefix.as_str()).unwrap()).await;
+        if let Some(prefix) = self
+            .search_prefixes
+            .iter()
+            .find(|p| identifier.starts_with(p.as_str()))
+        {
+            return self
+                .search(identifier.strip_prefix(prefix.as_str()).unwrap())
+                .await;
         }
 
-        if let Some(prefix) = self.rec_prefixes.iter().find(|p| identifier.starts_with(p.as_str())) {
-            return self.recommendations(identifier.strip_prefix(prefix.as_str()).unwrap()).await;
+        if let Some(prefix) = self
+            .rec_prefixes
+            .iter()
+            .find(|p| identifier.starts_with(p.as_str()))
+        {
+            return self
+                .recommendations(identifier.strip_prefix(prefix.as_str()).unwrap())
+                .await;
         }
 
         if let Some(caps) = self.playlist_z_re.captures(identifier) {
             let owner = caps.name("owner").map(|m| m.as_str()).unwrap_or("");
             let id = caps.name("id").map(|m| m.as_str()).unwrap_or("");
-            return self.load_playlist(owner, id, caps.name("hash").map(|m| m.as_str())).await;
+            return self
+                .load_playlist(owner, id, caps.name("hash").map(|m| m.as_str()))
+                .await;
         }
 
         if let Some(caps) = self.playlist_path_re.captures(identifier) {
             let owner = caps.name("owner").map(|m| m.as_str()).unwrap_or("");
             let id = caps.name("id").map(|m| m.as_str()).unwrap_or("");
-            return self.load_playlist(owner, id, caps.name("hash").map(|m| m.as_str())).await;
+            return self
+                .load_playlist(owner, id, caps.name("hash").map(|m| m.as_str()))
+                .await;
         }
 
         if let Some(caps) = self.track_re.captures(identifier) {
@@ -339,11 +441,15 @@ impl SourcePlugin for VkMusicSource {
         }
 
         if let Some(caps) = self.artist_re.captures(identifier) {
-            return self.load_artist(caps.name("slug").map(|m| m.as_str()).unwrap_or("")).await;
+            return self
+                .load_artist(caps.name("slug").map(|m| m.as_str()).unwrap_or(""))
+                .await;
         }
 
         if let Some(caps) = self.audios_re.captures(identifier) {
-            return self.load_user_wall(caps.name("owner").map(|m| m.as_str()).unwrap_or("")).await;
+            return self
+                .load_user_wall(caps.name("owner").map(|m| m.as_str()).unwrap_or(""))
+                .await;
         }
 
         LoadResult::Empty {}
@@ -355,12 +461,18 @@ impl SourcePlugin for VkMusicSource {
         _types: &[String],
         _routeplanner: Option<Arc<dyn crate::routeplanner::RoutePlanner>>,
     ) -> Option<crate::protocol::tracks::SearchResult> {
-        let q = self.search_prefixes.iter()
+        let q = self
+            .search_prefixes
+            .iter()
             .find_map(|p| query.strip_prefix(p.as_str()))
             .unwrap_or(query);
 
         let count = self.search_limit.to_string();
-        let track_params = [("q", q.to_string()), ("count", count.clone()), ("sort", "2".to_string())];
+        let track_params = [
+            ("q", q.to_string()),
+            ("count", count.clone()),
+            ("sort", "2".to_string()),
+        ];
         let album_params = [("q", q.to_string()), ("count", "20".to_string())];
         let artist_params = [("q", q.to_string()), ("count", "20".to_string())];
         let playlist_params = [("q", q.to_string()), ("count", "20".to_string())];
@@ -372,24 +484,40 @@ impl SourcePlugin for VkMusicSource {
             self.api.call("audio.searchPlaylists", &playlist_params),
         );
 
-        let tracks: Vec<Track> = tracks_resp.as_ref()
+        let tracks: Vec<Track> = tracks_resp
+            .as_ref()
             .and_then(|r| r["items"].as_array())
             .map(|arr| arr.iter().filter_map(|i| self.build_track(i)).collect())
             .unwrap_or_default();
 
-        let albums: Vec<PlaylistData> = albums_resp.as_ref()
+        let albums: Vec<PlaylistData> = albums_resp
+            .as_ref()
             .and_then(|r| r["items"].as_array())
-            .map(|arr| arr.iter().filter_map(|i| self.build_playlist_entry(i, "album")).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|i| self.build_playlist_entry(i, "album"))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let artists: Vec<PlaylistData> = artists_resp.as_ref()
+        let artists: Vec<PlaylistData> = artists_resp
+            .as_ref()
             .and_then(|r| r["items"].as_array())
-            .map(|arr| arr.iter().filter_map(|i| self.build_artist_entry(i)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|i| self.build_artist_entry(i))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        let playlists: Vec<PlaylistData> = playlists_resp.as_ref()
+        let playlists: Vec<PlaylistData> = playlists_resp
+            .as_ref()
             .and_then(|r| r["items"].as_array())
-            .map(|arr| arr.iter().filter_map(|i| self.build_playlist_entry(i, "playlist")).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|i| self.build_playlist_entry(i, "playlist"))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Some(crate::protocol::tracks::SearchResult {
