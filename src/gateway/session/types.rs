@@ -19,6 +19,13 @@ pub enum SessionOutcome {
     Shutdown,
 }
 
+#[derive(Default)]
+pub struct PersistentSessionState {
+    pub ssrc: u32,
+    pub udp_addr: Option<std::net::SocketAddr>,
+    pub session_key: Option<[u8; 32]>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CloseAction {
     UnknownOpcode,

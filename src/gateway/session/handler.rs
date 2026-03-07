@@ -15,8 +15,9 @@ use tracing::{debug, error, info, trace, warn};
 
 use super::{
     VoiceGateway,
+    backoff::Backoff,
     heartbeat::HeartbeatTracker,
-    types::{SessionOutcome, VoiceGatewayMessage, VoiceOp},
+    types::{PersistentSessionState, SessionOutcome, VoiceGatewayMessage, VoiceOp},
     voice::{SpeakConfig, discover_ip, speak_loop},
 };
 use crate::{
@@ -43,6 +44,8 @@ pub struct SessionState<'a> {
     speaking_tx: UnboundedSender<bool>,
     session_key: Option<[u8; 32]>,
     speak_task: Option<tokio::task::JoinHandle<()>>,
+    persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
+    backoff: &'a mut Backoff,
 }
 
 impl<'a> SessionState<'a> {
@@ -52,6 +55,8 @@ impl<'a> SessionState<'a> {
         seq_ack: Arc<AtomicI64>,
         conn_token: CancellationToken,
         speaking_tx: UnboundedSender<bool>,
+        persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
+        backoff: &'a mut Backoff,
     ) -> Result<Self, std::io::Error> {
         let mut users = HashSet::new();
         users.insert(gateway.user_id);
@@ -79,6 +84,8 @@ impl<'a> SessionState<'a> {
             speaking_tx,
             session_key: None,
             speak_task: None,
+            persistent_state,
+            backoff,
         })
     }
 
@@ -265,6 +272,11 @@ impl<'a> SessionState<'a> {
             self.gateway.guild_id, self.ssrc, self.selected_mode
         );
 
+        {
+            let mut state = self.persistent_state.lock().await;
+            state.ssrc = self.ssrc;
+        }
+
         match discover_ip(&self.udp_socket, addr, self.ssrc).await {
             Ok((my_ip, my_port)) => {
                 self.send_json(
@@ -280,6 +292,9 @@ impl<'a> SessionState<'a> {
                 return Some(SessionOutcome::Reconnect);
             }
         }
+
+        self.backoff.reset();
+
         None
     }
 
@@ -309,6 +324,14 @@ impl<'a> SessionState<'a> {
 
         if let Some(addr) = self.udp_addr {
             self.session_key = Some(key);
+
+            {
+                let mut state = self.persistent_state.lock().await;
+                state.udp_addr = Some(addr);
+                state.session_key = Some(key);
+                state.ssrc = self.ssrc;
+            }
+
             self.launch_speak_loop(addr, key).await;
             self.send_json(
                 5,
@@ -328,8 +351,19 @@ impl<'a> SessionState<'a> {
     async fn handle_resumed(&mut self) -> Option<SessionOutcome> {
         info!("[{}] Resumed", self.gateway.guild_id);
 
-        match (self.udp_addr, self.session_key) {
+        self.backoff.reset();
+
+        let (addr, key, ssrc) = {
+            let state = self.persistent_state.lock().await;
+            (state.udp_addr, state.session_key, state.ssrc)
+        };
+
+        match (addr, key) {
             (Some(addr), Some(key)) => {
+                self.udp_addr = Some(addr);
+                self.session_key = Some(key);
+                self.ssrc = ssrc;
+
                 self.launch_speak_loop(addr, key).await;
                 self.send_json(
                     5,
@@ -337,7 +371,10 @@ impl<'a> SessionState<'a> {
                 );
             }
             _ => {
-                warn!("[{}] Resume failed: missing state", self.gateway.guild_id);
+                warn!(
+                    "[{}] Resume failed: missing persistent state",
+                    self.gateway.guild_id
+                );
                 return Some(SessionOutcome::Identify);
             }
         }

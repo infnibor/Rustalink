@@ -28,7 +28,9 @@ pub mod voice;
 
 use self::{
     backoff::Backoff,
-    types::{SessionOutcome, VoiceGatewayMessage, classify_close, map_boxed_err},
+    types::{
+        PersistentSessionState, SessionOutcome, VoiceGatewayMessage, classify_close, map_boxed_err,
+    },
 };
 
 pub struct VoiceGateway {
@@ -91,9 +93,18 @@ impl VoiceGateway {
         let mut backoff = Backoff::new();
         let mut is_resume = false;
         let seq_ack = Arc::new(AtomicI64::new(-1));
+        let persistent_state = Arc::new(tokio::sync::Mutex::new(PersistentSessionState::default()));
 
         while !self.outer_token.is_cancelled() {
-            match self.connect(is_resume, seq_ack.clone()).await {
+            match self
+                .connect(
+                    is_resume,
+                    seq_ack.clone(),
+                    persistent_state.clone(),
+                    &mut backoff,
+                )
+                .await
+            {
                 Ok(SessionOutcome::Shutdown) => {
                     debug!("[{}] Gateway shutting down cleanly", self.guild_id);
                     return Ok(());
@@ -120,12 +131,20 @@ impl VoiceGateway {
                     }
                     is_resume = false;
                     seq_ack.store(-1, Ordering::Relaxed);
+                    // Clear persistent state on identify to avoid using stale keys/addr
+                    {
+                        let mut state = persistent_state.lock().await;
+                        state.udp_addr = None;
+                        state.session_key = None;
+                    }
                     let delay = std::time::Duration::from_millis(RECONNECT_DELAY_FRESH_MS);
                     debug!(
                         "[{}] Session invalid; identifying fresh in {:?}",
                         self.guild_id, delay
                     );
                     tokio::time::sleep(delay).await;
+                    // Note: Identify backoff is handled differently in reference codes,
+                    // but we'll stick to our backoff logic for now and just increment it.
                     backoff.next();
                 }
                 Err(e) => {
@@ -147,7 +166,13 @@ impl VoiceGateway {
         Ok(())
     }
 
-    async fn connect(&self, is_resume: bool, seq_ack: Arc<AtomicI64>) -> AnyResult<SessionOutcome> {
+    async fn connect(
+        &self,
+        is_resume: bool,
+        seq_ack: Arc<AtomicI64>,
+        persistent_state: Arc<tokio::sync::Mutex<PersistentSessionState>>,
+        backoff: &mut Backoff,
+    ) -> AnyResult<SessionOutcome> {
         let url = format!("wss://{}/?v={}", self.endpoint, VOICE_GATEWAY_VERSION);
         debug!("[{}] Connecting: {url}", self.guild_id);
 
@@ -201,6 +226,8 @@ impl VoiceGateway {
             seq_ack.clone(),
             conn_token.clone(),
             speaking_tx,
+            persistent_state,
+            backoff,
         )
         .map_err(|e| {
             warn!("[{}] Init session failed: {e}", self.guild_id);
