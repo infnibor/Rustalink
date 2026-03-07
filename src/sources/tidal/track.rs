@@ -37,11 +37,10 @@ impl PlayableTrack for TidalTrack {
             );
 
             let client_clone = (*tidal.inner).clone();
-            let reader_res = tokio::task::spawn_blocking(move || {
-                HttpSource::new(client_clone, &stream_url)
-            })
-            .await
-            .expect("TidalTrack: reader spawn_blocking failed");
+            let reader_res =
+                tokio::task::spawn_blocking(move || HttpSource::new(client_clone, &stream_url))
+                    .await
+                    .expect("TidalTrack: reader spawn_blocking failed");
 
             let reader = match reader_res {
                 Ok(r) => r,

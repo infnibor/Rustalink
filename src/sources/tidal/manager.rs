@@ -1,9 +1,9 @@
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
 use serde_json::Value;
-use base64::{Engine as _, engine::general_purpose};
 use tracing::{debug, warn};
 
 use super::{
@@ -278,7 +278,11 @@ impl TidalSource {
         };
 
         if !r.status().is_success() {
-            debug!("Tidal ISRC response {}: {}", r.status(), r.text().await.unwrap_or_default());
+            debug!(
+                "Tidal ISRC response {}: {}",
+                r.status(),
+                r.text().await.unwrap_or_default()
+            );
             return LoadResult::Empty {};
         }
 
@@ -549,11 +553,13 @@ impl SourcePlugin for TidalSource {
 
         let mut kind = AudioFormat::from_url(&stream_url);
         if kind == AudioFormat::Unknown {
-            kind = if quality == "LOSSLESS" || quality == "HI_RES_LOSSLESS" {
-                AudioFormat::Flac
+            if quality == "HI_RES_LOSSLESS" {
+                kind = AudioFormat::Flac;
+            } else if quality == "LOSSLESS" {
+                kind = AudioFormat::Mp4;
             } else {
-                AudioFormat::Aac
-            };
+                kind = AudioFormat::Aac;
+            }
         }
 
         Some(Box::new(TidalTrack {
