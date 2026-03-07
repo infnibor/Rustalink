@@ -22,7 +22,7 @@ use crate::{
 pub async fn handle_socket(
     mut socket: WebSocket,
     state: Arc<AppState>,
-    user_id: UserId,
+    user_id: Option<UserId>,
     client_session_id: Option<SessionId>,
 ) {
     let (tx, rx) = flume::unbounded();
@@ -174,7 +174,7 @@ pub async fn handle_socket(
 
 fn resolve_session(
     state: &Arc<AppState>,
-    user_id: UserId,
+    user_id: Option<UserId>,
     client_session_id: Option<&SessionId>,
     tx: flume::Sender<Message>,
 ) -> (Arc<Session>, bool) {
@@ -191,7 +191,7 @@ fn resolve_session(
     let session_id = SessionId::generate();
     let session = Arc::new(Session::new(
         session_id.clone(),
-        Some(user_id),
+        user_id,
         tx,
         state.config.server.max_event_queue_size,
     ));
