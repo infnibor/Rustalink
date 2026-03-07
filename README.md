@@ -66,6 +66,18 @@ Resolution of metadata-only sources via secondary providers.
 ### Utilities
 - [x] **Text-to-Speech**: Integrated Google and Flowery TTS.
 
+## Major Dependencies
+
+Rustalink leverages a modern Rust ecosystem to provide high-performance audio processing:
+
+- **[Tokio](https://tokio.rs/)**: High-performance asynchronous runtime.
+- **[Axum](https://github.com/tokio-rs/axum)**: Erskine web framework for the control plane.
+- **[Symphonia](https://github.com/pdeljanov/Symphonia)**: Pure Rust audio decoding and media demuxing.
+- **[Reqwest](https://github.com/seanmonstar/reqwest)**: Reliable HTTP client for metadata and stream fetching.
+- **[Davey](https://github.com/bongodevs/davey)**: Custom Discord DAVE protocol implementation.
+- **[Audiopus](https://github.com/bongodevs/audiopus)**: High-performance Opus codec bindings.
+- **[Prometheus](https://prometheus.io/)**: Real-time metrics and monitoring.
+
 ## Getting Started
 
 ### Quick Deployment (Docker)
