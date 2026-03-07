@@ -34,8 +34,7 @@ excluded_ips = []
 
 [sources.youtube]
 enabled = true
-refresh_tokens = [] # country_code = "US"
-# refresh_token = ""
+#refresh_tokens = [] # for tv client playback
 get_oauth_token = false
 
 [sources.youtube.clients]

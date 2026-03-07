@@ -118,11 +118,13 @@ impl PlayableTrack for TidalTrack {
 
             let mut kind = AudioFormat::from_url(&stream_url);
             if kind == AudioFormat::Unknown {
-                kind = if quality == "LOSSLESS" || quality == "HI_RES_LOSSLESS" {
-                    AudioFormat::Flac
+                if quality == "HI_RES_LOSSLESS" {
+                    kind = AudioFormat::Flac;
+                } else if quality == "LOSSLESS" {
+                    kind = AudioFormat::Mp4;
                 } else {
-                    AudioFormat::Aac
-                };
+                    kind = AudioFormat::Aac;
+                }
             }
 
             let stream_url_clone = stream_url.clone();
