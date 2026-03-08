@@ -50,6 +50,9 @@ Direct stream extraction and resolution.
 - [x] **Bandcamp**: Native search and track resolution.
 - [x] **MixCloud**: Native search and track resolution.
 - [x] **Audiomack**: Native search and track resolution.
+- [x] **Audius**: Native search and track resolution.
+- [x] **VK Music**: Native search and track resolution.
+- [x] **Twitch**: Live stream playback via HLS.
 - [x] **Reddit**: Url resolution and audio extraction.
 - [x] **HTTP / Local**: Direct file and remote URL streaming.
 
@@ -59,7 +62,8 @@ Resolution of metadata-only sources via secondary providers.
 - [x] **Spotify**: Advanced matching via ISRC.
 - [x] **Apple Music**: Comprehensive search-based resolution.
 - [x] **Tidal**: Specialty provider mirroring (playback support but need a Tidal-HIFI subscription and refresh token) [Inspired from](https://github.com/yaronzz/Tidal-Media-Downloader).
-- [x] **Yandex**: Specialty provider mirroring (playback support but need access token).
+- [x] **Yandex Music**: Specialty provider mirroring (playback support but need access token).
+- [x] **Last.fm**: Search-based metadata and track resolution.
 - [x] **Shazam**: Discovery-focused metadata resolution.
 - [x] **Anghami**: Discovery-focused metadata resolution.
 - [x] **Pandora**: Discovery-focused metadata resolution.
