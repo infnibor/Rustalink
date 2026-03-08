@@ -27,11 +27,11 @@ Rustalink is a standalone audio sending node optimized for modern Discord bots. 
 Our core engine is built for efficiency, allowing thousands of concurrent streams with minimal resource consumption.
 
 - **Infrastructure**
-    - [x] Asynchronous, non-blocking I/O
-    - [x] Sub-millisecond player precision
-    - [x] State-persistence for session recovery
-    - [x] Native cross-platform support
-    - [x] Real-time hardware-accelerated filters
+  - [x] Asynchronous, non-blocking I/O
+  - [x] Sub-millisecond player precision
+  - [x] State-persistence for session recovery
+  - [x] Native cross-platform support
+  - [x] Real-time hardware-accelerated filters
 
 
 ## Supported Platforms
@@ -41,36 +41,35 @@ Rustalink distinguishes between direct native playback and intelligent mirroring
 ### Native
 Direct stream extraction and resolution.
 
-- [x] **YouTube**: Full playback, search, and lyrics support.
-- [x] **SoundCloud**: High-fidelity direct streaming.
-- [x] **Deezer**: Native search and track resolution.
-- [x] **Qobuz**: Native search and track resolution.
-- [x] **JioSaavn**: Native search and track resolution.
-- [x] **Gaana**: Native search and track resolution.
-- [x] **Bandcamp**: Native search and track resolution.
-- [x] **MixCloud**: Native search and track resolution.
-- [x] **Audiomack**: Native search and track resolution.
-- [x] **Audius**: Native search and track resolution.
-- [x] **VK Music**: Native search and track resolution.
-- [x] **Twitch**: Live stream playback via HLS.
-- [x] **Reddit**: Url resolution and audio extraction.
-- [x] **HTTP / Local**: Direct file and remote URL streaming.
+- [x] **YouTube**
+- [x] **SoundCloud**
+- [x] **Deezer**
+- [x] **Qobuz**
+- [x] **JioSaavn**
+- [x] **Gaana**
+- [x] **Bandcamp**
+- [x] **MixCloud**
+- [x] **Audiomack**
+- [x] **Audius**
+- [x] **Reddit**
+- [x] **VK Music**
+- [x] **Twitch**
+- [x] **HTTP / Local**
 
 ### Mirroring
 Resolution of metadata-only sources via secondary providers.
 
-- [x] **Spotify**: Advanced matching via ISRC.
-- [x] **Apple Music**: Comprehensive search-based resolution.
-- [x] **Tidal**: Specialty provider mirroring (playback support but need a Tidal-HIFI subscription and refresh token) [Inspired from](https://github.com/yaronzz/Tidal-Media-Downloader).
-- [x] **Yandex Music**: Specialty provider mirroring (playback support but need access token).
-- [x] **Last.fm**: Search-based metadata and track resolution.
-- [x] **Shazam**: Discovery-focused metadata resolution.
-- [x] **Anghami**: Discovery-focused metadata resolution.
-- [x] **Pandora**: Discovery-focused metadata resolution.
-- [x] **Amazon Music**: Full metadata resolution (tracks, albums, artists, playlists, community playlists) via mirror playback.
-
+- [x] **Spotify**
+- [x] **Apple Music**
+- [x] **Tidal**
+- [x] **Yandex**
+- [x] **Shazam**
+- [x] **Anghami**
+- [x] **Pandora**
+- [x] **Last.fm**
+- [x] **Amazon Music**:
 ### Utilities
-- [x] **Text-to-Speech**: Integrated Google and Flowery TTS.
+- [x] **Text-to-Speech**
 
 ## Major Dependencies
 
@@ -84,17 +83,82 @@ Rustalink leverages a modern Rust ecosystem to provide high-performance audio pr
 - **[Audiopus](https://github.com/bongodevs/audiopus)**: High-performance Opus codec bindings.
 - **[Prometheus](https://prometheus.io/)**: Real-time metrics and monitoring.
 
-## Getting Started
 
-### Quick Deployment (Docker)
+## Quick Start (Docker)
+
+Docker is the recommended way to run Rustalink.
+
 ```bash
-docker run -d \
-  --name rustalink \
-  -p 2333:2333 \
-  -v $(pwd)/config.toml:/app/config.toml \
-  --restart unless-stopped \
-  ghcr.io/bongodevs/rustalink:latest
+# 1. Pull the image
+docker pull ghcr.io/bongodevs/rustalink:latest
+
+# 2. Setup config
+mkdir rustalink && cd rustalink
+docker run --rm ghcr.io/bongodevs/rustalink:latest cat config.example.toml > config.toml
+
+# 3. Running with Docker Compose
+# Create a docker-compose.yml file:
+services:
+  rustalink:
+    image: ghcr.io/bongodevs/rustalink:latest
+    ports: ["2333:2333"]
+    volumes: ["./config.toml:/app/config.toml", "./logs:/app/logs"]
+    restart: unless-stopped
 ```
+
+### Build Docker Image from Source
+
+If you'd rather build the Docker image yourself from local source instead of pulling a pre-built image:
+
+```bash
+git clone https://github.com/bongodevs/rustalink.git
+cd rustalink
+
+# Build image from source (compiles Rust inside Docker — no local Rust toolchain needed)
+docker build --target local -t rustalink:dev .
+
+# Run it
+docker run -p 2333:2333 -v ./config.toml:/app/config.toml rustalink:dev
+```
+
+> [!NOTE]
+> The `--target local` flag triggers a full in-container Rust build. This takes longer than pulling the pre-built image but requires no local Rust installation.
+
+For native installation (Windows, Linux, macOS), see the [Releases](https://github.com/bongodevs/rustalink/releases) page.
+
+---
+
+## Building from Source
+
+### Requirements
+- **Rust**: Latest stable version is required.
+
+#### Linux (Ubuntu/Debian)
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config libssl-dev clang
+```
+
+#### macOS
+```bash
+brew install cmake pkg-config
+# Ensure Xcode Command Line Tools are installed:
+xcode-select --install
+```
+
+#### Windows
+- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (select "Desktop development with C++").
+- Install [CMake](https://cmake.org/download/).
+
+---
+
+```bash
+git clone https://github.com/bongodevs/rustalink.git
+cd rustalink
+cargo build --release
+```
+
+The compiled binary will be at `target/release/rustalink`.
 
 
 ## Credits & Inspiration
