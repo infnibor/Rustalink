@@ -27,7 +27,10 @@ impl TwitchGqlClient {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.client_id.try_read().map(|g| g.is_some()).unwrap_or(false)
+        self.client_id
+            .try_read()
+            .map(|g| g.is_some())
+            .unwrap_or(false)
     }
 
     pub async fn init_request_headers(&self) {
@@ -58,11 +61,11 @@ impl TwitchGqlClient {
             .collect();
 
         for cookie in &cookie_headers {
-            if cookie.contains("unique_id=") {
-                if let Some(id) = extract_between(cookie, "unique_id=", ";") {
-                    *self.device_id.write().await = Some(id.trim().to_string());
-                    break;
-                }
+            if cookie.contains("unique_id=")
+                && let Some(id) = extract_between(cookie, "unique_id=", ";")
+            {
+                *self.device_id.write().await = Some(id.trim().to_string());
+                break;
             }
         }
 
@@ -129,7 +132,10 @@ impl TwitchGqlClient {
 
         if let Some(errors) = body["errors"].as_array() {
             for e in errors {
-                debug!("Twitch GQL error: {}", e["message"].as_str().unwrap_or("unknown"));
+                debug!(
+                    "Twitch GQL error: {}",
+                    e["message"].as_str().unwrap_or("unknown")
+                );
             }
             return None;
         }
@@ -149,7 +155,10 @@ impl TwitchGqlClient {
 
         if let Some(errors) = body["errors"].as_array() {
             for e in errors {
-                debug!("Twitch access token GQL error: {}", e["message"].as_str().unwrap_or("unknown"));
+                debug!(
+                    "Twitch access token GQL error: {}",
+                    e["message"].as_str().unwrap_or("unknown")
+                );
             }
             return None;
         }

@@ -13,11 +13,8 @@ use crate::{
     sources::{
         plugin::PlayableTrack,
         youtube::hls::{
-            fetcher::fetch_segment_into,
-            resolver::fetch_text,
-            ts_demux::extract_adts_from_ts,
-            types::Resource,
-            utils::resolve_url,
+            fetcher::fetch_segment_into, resolver::fetch_text, ts_demux::extract_adts_from_ts,
+            types::Resource, utils::resolve_url,
         },
     },
 };
@@ -48,20 +45,21 @@ impl LiveHlsReader {
             .spawn(move || {
                 let _guard = handle.enter();
 
-                let mut builder = reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(15));
+                let mut builder =
+                    reqwest::Client::builder().timeout(std::time::Duration::from_secs(15));
 
                 if let Some(ip) = local_addr {
                     builder = builder.local_address(ip);
                 }
 
-                if let Some(ref cfg) = proxy && let Some(ref url) = cfg.url {
-                    if let Ok(mut p) = reqwest::Proxy::all(url) {
-                        if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
-                            p = p.basic_auth(u, pw);
-                        }
-                        builder = builder.proxy(p);
+                if let Some(ref cfg) = proxy
+                    && let Some(ref url) = cfg.url
+                    && let Ok(mut p) = reqwest::Proxy::all(url)
+                {
+                    if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
+                        p = p.basic_auth(u, pw);
                     }
+                    builder = builder.proxy(p);
                 }
 
                 let client = match builder.build() {
@@ -89,8 +87,7 @@ impl LiveHlsReader {
 
                     for seg in segments {
                         let mut raw = Vec::new();
-                        if let Err(e) =
-                            handle.block_on(fetch_segment_into(&client, &seg, &mut raw))
+                        if let Err(e) = handle.block_on(fetch_segment_into(&client, &seg, &mut raw))
                         {
                             tracing::warn!("Twitch: segment fetch error: {e}");
                             continue;
@@ -152,7 +149,11 @@ fn parse_live_playlist(
             if j < lines.len() && !lines[j].is_empty() {
                 let url = resolve_url(base_url, lines[j]);
                 if seen.insert(url.clone()) {
-                    segments.push(Resource { url, range: None, duration });
+                    segments.push(Resource {
+                        url,
+                        range: None,
+                        duration,
+                    });
                 }
             }
             i = j + 1;
@@ -175,7 +176,10 @@ impl Read for LiveHlsReader {
                 return Ok(n);
             }
 
-            match self.chunk_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+            match self
+                .chunk_rx
+                .recv_timeout(std::time::Duration::from_millis(500))
+            {
                 Ok(chunk) => {
                     self.current = chunk;
                     self.pos = 0;
