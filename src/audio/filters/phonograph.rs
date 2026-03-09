@@ -86,27 +86,25 @@ pub struct PhonographFilter {
     rng: XorShift32,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct PhonographConfig {
-    pub frequency: f32,
-    pub depth: f32,
-    pub crackle: f32,
-    pub flutter: f32,
-    pub room: f32,
-    pub mic_agc: f32,
-    pub drive: f32,
-}
-
 impl PhonographFilter {
-    pub fn new(config: PhonographConfig) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        frequency: f32,
+        depth: f32,
+        crackle: f32,
+        flutter: f32,
+        room: f32,
+        mic_agc: f32,
+        drive: f32,
+    ) -> Self {
         let mut filter = Self {
-            frequency: 0.8,
-            depth: 0.25,
-            crackle: 0.18,
-            flutter: 0.18,
-            room: 0.22,
-            mic_agc: 0.25,
-            drive: 0.25,
+            frequency,
+            depth,
+            crackle,
+            flutter,
+            room,
+            mic_agc,
+            drive,
 
             wow_lfo: Lfo::new(),
             flutter_lfo: Lfo::new(),
@@ -122,18 +120,18 @@ impl PhonographFilter {
             hiss_hp_state: BiquadState::default(),
             hiss_lp_state: BiquadState::default(),
 
-            hp1_coeffs: Self::make_highpass(260.0, std::f64::consts::FRAC_1_SQRT_2, 48000.0),
-            hp2_coeffs: Self::make_highpass(260.0, std::f64::consts::FRAC_1_SQRT_2, 48000.0),
-            lp1_coeffs: Self::make_lowpass(3300.0, std::f64::consts::FRAC_1_SQRT_2, 48000.0),
-            lp2_coeffs: Self::make_lowpass(3300.0, std::f64::consts::FRAC_1_SQRT_2, 48000.0),
-            peak1_coeffs: Self::make_peaking(950.0, 1.1, 7.0, 48000.0),
-            peak2_coeffs: Self::make_peaking(2400.0, 1.6, 3.5, 48000.0),
-            hiss_hp_coeffs: Self::make_highpass(1800.0, std::f64::consts::FRAC_1_SQRT_2, 48000.0),
-            hiss_lp_coeffs: Self::make_lowpass(6500.0, std::f64::consts::FRAC_1_SQRT_2, 48000.0),
+            hp1_coeffs: BiquadCoeffs::default(),
+            hp2_coeffs: BiquadCoeffs::default(),
+            lp1_coeffs: BiquadCoeffs::default(),
+            lp2_coeffs: BiquadCoeffs::default(),
+            peak1_coeffs: BiquadCoeffs::default(),
+            peak2_coeffs: BiquadCoeffs::default(),
+            hiss_hp_coeffs: BiquadCoeffs::default(),
+            hiss_lp_coeffs: BiquadCoeffs::default(),
 
-            r1: DelayLine::new((48000.0 * 0.03) as usize),
-            r2: DelayLine::new((48000.0 * 0.03) as usize),
-            r3: DelayLine::new((48000.0 * 0.03) as usize),
+            r1: DelayLine::new(148 * 48),
+            r2: DelayLine::new(115 * 48),
+            r3: DelayLine::new(63 * 48),
             room_damp: 0.0,
 
             tick_env: 0.0,
@@ -143,11 +141,11 @@ impl PhonographFilter {
             env: 0.0,
             agc_gain: 1.0,
 
-            rng: XorShift32::new(0x1a2b3c4d),
+            rng: XorShift32::new(0x1337),
         };
 
         filter.recompute_filters();
-        filter.update(config);
+        filter.update(frequency, depth, crackle, flutter, room, mic_agc, drive);
         filter
     }
 
@@ -205,17 +203,27 @@ impl PhonographFilter {
         }
     }
 
-    pub fn update(&mut self, config: PhonographConfig) {
-        self.frequency = config.frequency;
-        self.depth = config.depth.clamp(0.0, 1.0);
-        self.crackle = config.crackle.clamp(0.0, 1.0);
-        self.flutter = config.flutter.clamp(0.0, 1.0);
-        self.room = config.room.clamp(0.0, 1.0);
-        self.mic_agc = config.mic_agc.clamp(0.0, 1.0);
-        self.drive = config.drive.clamp(0.0, 1.0);
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(
+        &mut self,
+        frequency: f32,
+        depth: f32,
+        crackle: f32,
+        flutter: f32,
+        room: f32,
+        mic_agc: f32,
+        drive: f32,
+    ) {
+        self.frequency = frequency.clamp(0.0, 1.0);
+        self.depth = depth.clamp(0.0, 1.0);
+        self.crackle = crackle.clamp(0.0, 1.0);
+        self.flutter = flutter.clamp(0.0, 1.0);
+        self.room = room.clamp(0.0, 1.0);
+        self.mic_agc = mic_agc.clamp(0.0, 1.0);
+        self.drive = drive.clamp(0.0, 1.0);
 
-        self.wow_lfo.update(self.frequency as f64, 1.0);
-        self.flutter_lfo.update(7.5, 1.0);
+        self.wow_lfo.update(0.5, self.depth as f64);
+        self.flutter_lfo.update(6.0, (self.flutter * 0.1) as f64);
     }
 
     fn recompute_filters(&mut self) {

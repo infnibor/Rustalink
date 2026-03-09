@@ -9,81 +9,82 @@ struct Coefficients {
     gamma: f32,
 }
 
+#[allow(clippy::excessive_precision)]
 const COEFFICIENTS_48000: [Coefficients; BAND_COUNT] = [
     Coefficients {
-        beta: 0.9984755,
-        alpha: 0.0007622667,
-        gamma: 1.9984648,
+        beta: 9.9847546664e-01,
+        alpha: 7.6226668143e-04,
+        gamma: 1.9984647656e+00,
     },
     Coefficients {
-        beta: 0.9975618,
-        alpha: 0.0012190767,
-        gamma: 1.9975345,
+        beta: 9.9756184654e-01,
+        alpha: 1.2190767289e-03,
+        gamma: 1.9975344645e+00,
     },
     Coefficients {
-        beta: 0.9961626,
-        alpha: 0.0019186931,
-        gamma: 1.9960947,
+        beta: 9.9616261379e-01,
+        alpha: 1.9186931041e-03,
+        gamma: 1.9960947369e+00,
     },
     Coefficients {
-        beta: 0.9939158,
-        alpha: 0.0030421073,
-        gamma: 1.993745,
+        beta: 9.9391578543e-01,
+        alpha: 3.0421072865e-03,
+        gamma: 1.9937449618e+00,
     },
     Coefficients {
-        beta: 0.9902831,
-        alpha: 0.004858464,
-        gamma: 1.9898466,
+        beta: 9.9028307215e-01,
+        alpha: 4.8584639242e-03,
+        gamma: 1.9898465702e+00,
     },
     Coefficients {
-        beta: 0.984859,
-        alpha: 0.0075705137,
-        gamma: 1.9837963,
+        beta: 9.8485897264e-01,
+        alpha: 7.5705136795e-03,
+        gamma: 1.9837962543e+00,
     },
     Coefficients {
-        beta: 0.9758851,
-        alpha: 0.012057437,
-        gamma: 1.9731772,
+        beta: 9.7588512657e-01,
+        alpha: 1.2057436715e-02,
+        gamma: 1.9731772447e+00,
     },
     Coefficients {
-        beta: 0.9622852,
-        alpha: 0.018857391,
-        gamma: 1.9556165,
+        beta: 9.6228521814e-01,
+        alpha: 1.8857390928e-02,
+        gamma: 1.9556164694e+00,
     },
     Coefficients {
-        beta: 0.9408093,
-        alpha: 0.029595335,
-        gamma: 1.9242054,
+        beta: 9.4080933132e-01,
+        alpha: 2.9595334338e-02,
+        gamma: 1.9242054384e+00,
     },
     Coefficients {
-        beta: 0.9070206,
-        alpha: 0.046489704,
-        gamma: 1.8653476,
+        beta: 9.0702059196e-01,
+        alpha: 4.6489704022e-02,
+        gamma: 1.8653476166e+00,
     },
     Coefficients {
-        beta: 0.85868,
-        alpha: 0.07065998,
-        gamma: 1.7600402,
+        beta: 8.5868004289e-01,
+        alpha: 7.0659978553e-02,
+        gamma: 1.7600401337e+00,
     },
     Coefficients {
-        beta: 0.7840961,
-        alpha: 0.10795194,
-        gamma: 1.5450726,
+        beta: 7.8409610788e-01,
+        alpha: 1.0795194606e-01,
+        gamma: 1.5450725522e+00,
     },
     Coefficients {
-        beta: 0.6833286,
-        alpha: 0.1583357,
-        gamma: 1.1426447,
+        beta: 6.8332861002e-01,
+        alpha: 1.5833569499e-01,
+        gamma: 1.1426447155e+00,
     },
     Coefficients {
-        beta: 0.5526752,
-        alpha: 0.2236624,
-        gamma: 0.4018619,
+        beta: 5.5267518228e-01,
+        alpha: 2.2366240886e-01,
+        gamma: 4.0186190803e-01,
     },
     Coefficients {
-        beta: 0.41811886,
-        alpha: 0.29094055,
-        gamma: -0.7090594,
+        beta: 4.1811888447e-01,
+        alpha: 2.9094055777e-01,
+        gamma: -7.0905944223e-01,
     },
 ];
 
@@ -139,17 +140,10 @@ impl EqualizerFilter {
         let states: [[EqBandState; 2]; BAND_COUNT] =
             std::array::from_fn(|_| [EqBandState::default(), EqBandState::default()]);
 
-        let positive_sum: f32 = gains.iter().filter(|g| **g > 0.0).sum();
-        let makeup_gain = if positive_sum > 1.0 {
-            DEFAULT_MAKEUP_GAIN / (1.0 + (positive_sum - 1.0) * 0.5)
-        } else {
-            DEFAULT_MAKEUP_GAIN
-        };
-
         Self {
             gains,
             states,
-            makeup_gain,
+            makeup_gain: DEFAULT_MAKEUP_GAIN,
         }
     }
 }
@@ -182,11 +176,11 @@ impl AudioFilter for EqualizerFilter {
                 result_right += band_right * gain;
             }
 
-            let out_left = (result_left * self.makeup_gain).tanh();
-            let out_right = (result_right * self.makeup_gain).tanh();
+            let out_left = (result_left * self.makeup_gain).clamp(-1.0, 1.0);
+            let out_right = (result_right * self.makeup_gain).clamp(-1.0, 1.0);
 
-            samples[offset] = (out_left * 32767.0).round() as i16;
-            samples[offset + 1] = (out_right * 32767.0).round() as i16;
+            samples[offset] = (out_left * 32767.0) as i16;
+            samples[offset + 1] = (out_right * 32767.0) as i16;
         }
     }
 

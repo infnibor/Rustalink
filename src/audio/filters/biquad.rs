@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct BiquadCoeffs {
     pub b0: f64,
     pub b1: f64,

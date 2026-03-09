@@ -1,7 +1,3 @@
-//! `FlowController` — the central PCM processing hub.
-//!
-//! Reassembles arbitrary PCM chunks into fixed 3840-byte (960 sample) frames
-//! and pipes them through the effects chain: Filters → Tape → Volume → Fade.
 
 use flume::{Receiver, Sender};
 
@@ -13,7 +9,6 @@ use crate::audio::{
         crossfade::CrossfadeController, fade::FadeEffect, tape::TapeEffect, volume::VolumeEffect,
     },
     error::AudioError,
-    filters::FilterChain,
 };
 
 pub struct FlowController {
@@ -21,7 +16,6 @@ pub struct FlowController {
     pub volume: VolumeEffect,
     pub fade: FadeEffect,
     pub crossfade: CrossfadeController,
-    pub filters: Option<FilterChain>,
     pending_pcm: Vec<i16>,
     decoder_done: bool,
     frame_rx: Receiver<AudioFrame>,
@@ -54,7 +48,6 @@ impl FlowController {
             volume: VolumeEffect::new(1.0, sample_rate, channels),
             fade: FadeEffect::new(1.0, channels),
             crossfade: CrossfadeController::new(sample_rate, channels),
-            filters: None,
             pending_pcm: Vec::with_capacity(FRAME_SIZE_SAMPLES * 2),
             decoder_done: false,
             frame_rx,
@@ -94,16 +87,6 @@ impl FlowController {
         }
     }
 
-    /// Pull-based variant for use inside the `Mixer` tick.
-    ///
-    /// Drains the channel only until `pending_pcm` has one full frame's worth
-    /// of data — this preserves backpressure so the decoder runs at real-time
-    /// pace rather than buffering the entire file into memory.
-    ///
-    /// Returns:
-    /// - `Ok(Some(frame))` — a processed 960-sample (1920 i16) frame is ready
-    /// - `Ok(None)`        — not enough data yet; call again next tick
-    /// - `Err(AudioError::DecoderFinished)` — decoder finished and no full frame remains
     pub fn try_pop_frame(&mut self) -> Result<Option<PooledBuffer>, AudioError> {
         if !self.decoder_done {
             while self.pending_pcm.len() < FRAME_SIZE_SAMPLES {
@@ -138,10 +121,6 @@ impl FlowController {
     }
 
     pub fn process_frame(&mut self, frame: &mut [i16]) {
-        if let Some(filters) = &mut self.filters {
-            filters.process(frame);
-        }
-
         self.tape.process(frame);
         self.volume.process(frame);
         self.fade.process(frame);

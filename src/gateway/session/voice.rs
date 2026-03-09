@@ -182,7 +182,9 @@ impl VoiceSession {
             }
         }
 
-        let pcm_to_encode = self.apply_filters(pcm, ts_pcm).await;
+        let Some(pcm_to_encode) = self.apply_filters(pcm, ts_pcm).await else {
+            return Ok(());
+        };
 
         let size = match encoder.encode(pcm_to_encode, opus) {
             Ok(s) => s,
@@ -219,17 +221,21 @@ impl VoiceSession {
         }
     }
 
-    async fn apply_filters<'a>(&self, pcm: &'a mut [i16], ts: &'a mut [i16]) -> &'a [i16] {
+    async fn apply_filters<'a>(&self, pcm: &'a mut [i16], ts: &'a mut [i16]) -> Option<&'a [i16]> {
         let mut filter = self.config.filter_chain.lock().await;
         if !filter.is_active() {
-            return pcm;
+            return Some(pcm);
         }
 
         filter.process(pcm);
-        if filter.has_timescale() && filter.fill_frame(ts) {
-            ts
+        if filter.has_timescale() {
+            if filter.fill_frame(ts) {
+                Some(ts)
+            } else {
+                None // Not enough data in timescale buffer yet
+            }
         } else {
-            pcm
+            Some(pcm)
         }
     }
 
