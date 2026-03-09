@@ -372,28 +372,28 @@ pub async fn search_full(
 
     let all_types = types.is_empty();
 
-    if all_types || types.contains(&"track".to_owned()) {
-        if let Some(res) = fetch_search(client, nuid, device_id, query, 1, limit).await {
-            tracks = res.songs.iter().filter_map(parse_track).collect();
-        }
+    if (all_types || types.contains(&"track".to_owned()))
+        && let Some(res) = fetch_search(client, nuid, device_id, query, 1, limit).await
+    {
+        tracks = res.songs.iter().filter_map(parse_track).collect();
     }
 
-    if all_types || types.contains(&"album".to_owned()) {
-        if let Some(res) = fetch_search(client, nuid, device_id, query, 10, limit).await {
-            albums = res.albums.iter().map(parse_album).collect();
-        }
+    if (all_types || types.contains(&"album".to_owned()))
+        && let Some(res) = fetch_search(client, nuid, device_id, query, 10, limit).await
+    {
+        albums = res.albums.iter().map(parse_album).collect();
     }
 
-    if all_types || types.contains(&"artist".to_owned()) {
-        if let Some(res) = fetch_search(client, nuid, device_id, query, 100, limit).await {
-            artists = res.artists.iter().map(parse_artist).collect();
-        }
+    if (all_types || types.contains(&"artist".to_owned()))
+        && let Some(res) = fetch_search(client, nuid, device_id, query, 100, limit).await
+    {
+        artists = res.artists.iter().map(parse_artist).collect();
     }
 
-    if all_types || types.contains(&"playlist".to_owned()) {
-        if let Some(res) = fetch_search(client, nuid, device_id, query, 1000, limit).await {
-            playlists = res.playlists.iter().map(parse_playlist).collect();
-        }
+    if (all_types || types.contains(&"playlist".to_owned()))
+        && let Some(res) = fetch_search(client, nuid, device_id, query, 1000, limit).await
+    {
+        playlists = res.playlists.iter().map(parse_playlist).collect();
     }
 
     Some(SearchResult {
