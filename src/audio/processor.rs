@@ -13,10 +13,10 @@ use tracing::{Level, debug, span, warn};
 
 use crate::{
     audio::{
-        buffer::PooledBuffer,
+        AudioFrame,
         constants::{MIXER_CHANNELS, TARGET_SAMPLE_RATE},
         demux::{DemuxResult, open_format},
-        engine::{BoxedEngine, TranscodeEngine},
+        engine::{BoxedEngine, StandardEngine},
         resample::Resampler,
     },
     common::types::AudioFormat,
@@ -55,7 +55,7 @@ impl AudioProcessor {
     pub fn new(
         source: Box<dyn MediaSource>,
         kind: Option<AudioFormat>,
-        pcm_tx: flume::Sender<PooledBuffer>,
+        frame_tx: flume::Sender<AudioFrame>,
         cmd_rx: Receiver<DecoderCommand>,
         error_tx: Option<flume::Sender<String>>,
         config: PlayerConfig,
@@ -63,7 +63,7 @@ impl AudioProcessor {
         Self::with_engine(
             source,
             kind,
-            Box::new(TranscodeEngine::new(pcm_tx)),
+            Box::new(StandardEngine::new(frame_tx)),
             cmd_rx,
             error_tx,
             config,
@@ -241,14 +241,18 @@ impl AudioProcessor {
                             &pooled[..]
                         };
 
-                        let mut resampled = Vec::with_capacity(pcm_data.len());
+                        let capacity = (pcm_data.len() as f64 * TARGET_SAMPLE_RATE as f64
+                            / self.source_rate as f64)
+                            .ceil() as usize
+                            + 32;
+                        let mut resampled = crate::audio::buffer::acquire_buffer(capacity);
                         if self.resampler.is_passthrough() {
                             resampled.extend_from_slice(pcm_data);
                         } else {
                             self.resampler.process(pcm_data, &mut resampled);
                         }
 
-                        if !resampled.is_empty() && !self.engine.push_pcm(resampled) {
+                        if !resampled.is_empty() && !self.engine.push(AudioFrame::Pcm(resampled)) {
                             return Ok(());
                         }
                     }
@@ -286,7 +290,7 @@ impl AudioProcessor {
                     self.resampler.reset();
                     self.decoder.reset();
                     self.sample_buf = None;
-                    let _ = self.engine.push_pcm(Vec::new());
+                    let _ = self.engine.push(AudioFrame::Pcm(Vec::new()));
                     CommandOutcome::Seeked
                 } else {
                     warn!("AudioProcessor: seek to {}ms failed", ms);

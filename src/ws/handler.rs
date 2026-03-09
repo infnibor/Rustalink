@@ -72,7 +72,7 @@ pub async fn handle_socket(
                     }
                 }
 
-                match ws_tx.try_send(Message::Ping(b"heartbeat".to_vec().into())) {
+                match ws_tx.try_send(Message::Ping(Vec::new().into())) {
                     Ok(()) => {
                         if !watchdog_armed.load(Relaxed) {
                             last_pong_ms.store(now_ms(), Relaxed);
@@ -183,7 +183,7 @@ fn resolve_session(
     {
         info!("Resuming session: {sid}");
         existing.paused.store(false, Relaxed);
-        *existing.sender.lock() = tx;
+        *existing.sender.write() = tx;
         state.sessions.insert(sid.clone(), existing.clone());
         return (existing, true);
     }
@@ -251,7 +251,7 @@ async fn handle_session_close(
     if session.resumable.load(Relaxed) {
         session.paused.store(true, Relaxed);
 
-        if !session.sender.lock().same_channel(tx) {
+        if !session.sender.read().same_channel(tx) {
             info!(
                 "Session {session_id} replaced by a new connection; closing the old connection for cleanup."
             );
@@ -265,7 +265,7 @@ async fn handle_session_close(
                 "Shutting down resumable session {} because it shares an ID with a newly disconnected session.",
                 removed.session_id
             );
-            removed.shutdown(state).await;
+            removed.shutdown().await;
         }
 
         state
@@ -284,11 +284,11 @@ async fn handle_session_close(
             tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
             if let Some((_, s)) = state_cleanup.resumable_sessions.remove(&sid) {
                 warn!("Session resume timeout expired: {sid}");
-                s.shutdown(&state_cleanup).await;
+                s.shutdown().await;
             }
         });
     } else if let Some((_, s)) = state.sessions.remove(&session_id) {
         info!("Connection closed (not resumable): {session_id}");
-        s.shutdown(state).await;
+        s.shutdown().await;
     }
 }

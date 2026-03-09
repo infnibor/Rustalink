@@ -1,13 +1,15 @@
 use std::{net::IpAddr, sync::Arc};
 
-use flume::{Receiver, Sender};
 use regex::Regex;
 use tracing::{debug, error};
 
 use super::utils;
 use crate::{
-    audio::processor::DecoderCommand,
-    sources::{http::HttpTrack, plugin::PlayableTrack},
+    audio::{AudioFrame, processor::DecoderCommand},
+    sources::{
+        http::HttpTrack,
+        plugin::{DecoderOutput, PlayableTrack},
+    },
 };
 
 pub struct YandexMusicTrack {
@@ -18,18 +20,8 @@ pub struct YandexMusicTrack {
 }
 
 impl PlayableTrack for YandexMusicTrack {
-    fn start_decoding(
-        &self,
-        config: crate::config::player::PlayerConfig,
-    ) -> (
-        Receiver<crate::audio::buffer::PooledBuffer>,
-        Sender<DecoderCommand>,
-        Receiver<String>,
-        Option<Receiver<std::sync::Arc<Vec<u8>>>>,
-    ) {
-        let (tx, rx) = flume::bounded::<crate::audio::buffer::PooledBuffer>(
-            (config.buffer_duration_ms / 20) as usize,
-        );
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
+        let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
 
@@ -50,10 +42,9 @@ impl PlayableTrack for YandexMusicTrack {
                             local_addr,
                             proxy,
                         };
-                        let (inner_rx, inner_cmd_tx, inner_err_rx, _inner_opus_rx) =
+                        let (inner_rx, inner_cmd_tx, inner_err_rx) =
                             http_track.start_decoding(config.clone());
 
-                        // Proxy commands
                         let inner_cmd_tx_clone = inner_cmd_tx.clone();
                         tokio::spawn(async move {
                             while let Ok(cmd) = cmd_rx.recv_async().await {
@@ -63,7 +54,6 @@ impl PlayableTrack for YandexMusicTrack {
                             }
                         });
 
-                        // Proxy errors
                         let err_tx_clone = err_tx.clone();
                         tokio::spawn(async move {
                             while let Ok(err) = inner_err_rx.recv_async().await {
@@ -71,7 +61,6 @@ impl PlayableTrack for YandexMusicTrack {
                             }
                         });
 
-                        // Proxy samples
                         while let Ok(sample) = inner_rx.recv_async().await {
                             if tx.send(sample).is_err() {
                                 break;
@@ -89,7 +78,7 @@ impl PlayableTrack for YandexMusicTrack {
             });
         });
 
-        (rx, cmd_tx, err_rx, None)
+        (rx, cmd_tx, err_rx)
     }
 }
 
@@ -100,7 +89,6 @@ async fn fetch_download_url(client: &Arc<reqwest::Client>, id: &str) -> Option<S
 
     let results = data["result"].as_array()?;
 
-    // Find MP3 with highest bitrate
     let mut mp3_items: Vec<_> = results
         .iter()
         .filter(|item| item["codec"].as_str() == Some("mp3"))
@@ -110,7 +98,6 @@ async fn fetch_download_url(client: &Arc<reqwest::Client>, id: &str) -> Option<S
     let best_mp3 = mp3_items.last()?;
     let download_info_url = best_mp3["downloadInfoUrl"].as_str()?;
 
-    // Fetch XML
     let xml_resp = client.get(download_info_url).send().await.ok()?;
     let xml_text = xml_resp.text().await.ok()?;
 

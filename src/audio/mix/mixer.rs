@@ -11,6 +11,7 @@ use flume::Receiver;
 use super::layer::MixLayer;
 use crate::{
     audio::{
+        AudioFrame,
         buffer::PooledBuffer,
         constants::{MAX_LAYERS, MIXER_CHANNELS},
         flow::FlowController,
@@ -99,15 +100,11 @@ pub struct Mixer {
     tracks: Vec<MixerTrack>,
     mix_buf: Vec<i32>,
     pub audio_mixer: AudioMixer,
-    opus_passthrough: Option<PassthroughTrack>,
+    opus_passthrough_track: Option<usize>, // index of track providing opus passthrough
     final_pcm_buf: Vec<i16>,
 }
 
-struct PassthroughTrack {
-    rx: flume::Receiver<Arc<Vec<u8>>>,
-    position: Arc<AtomicU64>,
-    state: Arc<AtomicU8>,
-}
+// PassthroughTrack is now implicitly handled by MixerTrack via FlowController's latest_opus
 
 struct MixerTrack {
     flow: FlowController,
@@ -118,7 +115,6 @@ struct MixerTrack {
     position: Arc<AtomicU64>,
     config: PlayerConfig,
     finished: bool,
-    slice_buf: Vec<i16>,
 }
 
 impl Mixer {
@@ -127,14 +123,14 @@ impl Mixer {
             tracks: Vec::new(),
             mix_buf: Vec::with_capacity(1920),
             audio_mixer: AudioMixer::new(),
-            opus_passthrough: None,
+            opus_passthrough_track: None,
             final_pcm_buf: Vec::with_capacity(1920),
         }
     }
 
     pub fn add_track(
         &mut self,
-        rx: Receiver<PooledBuffer>,
+        rx: Receiver<AudioFrame>,
         state: Arc<AtomicU8>,
         volume: Arc<AtomicU32>,
         position: Arc<AtomicU64>,
@@ -154,26 +150,16 @@ impl Mixer {
             position,
             config,
             finished: false,
-            slice_buf: Vec::with_capacity(1920),
         });
     }
 
-    pub fn add_passthrough_track(
-        &mut self,
-        opus_rx: Receiver<Arc<Vec<u8>>>,
-        position: Arc<AtomicU64>,
-        state: Arc<AtomicU8>,
-    ) {
-        self.opus_passthrough = Some(PassthroughTrack {
-            rx: opus_rx,
-            position,
-            state,
-        });
+    pub fn set_passthrough_track(&mut self, track_index: usize) {
+        self.opus_passthrough_track = Some(track_index);
     }
 
-    pub fn take_opus_frame(&mut self) -> Option<Arc<Vec<u8>>> {
-        if let Some(ref pt) = self.opus_passthrough {
-            let state = PlaybackState::from(pt.state.load(Ordering::Acquire));
+    pub fn take_opus_frame(&mut self) -> Option<Vec<u8>> {
+        for track in self.tracks.iter_mut() {
+            let state = PlaybackState::from(track.state.load(Ordering::Acquire));
             if matches!(
                 state,
                 PlaybackState::Paused
@@ -181,17 +167,12 @@ impl Mixer {
                     | PlaybackState::Stopping
                     | PlaybackState::Starting
             ) {
-                return None;
+                continue;
             }
-            match pt.rx.try_recv() {
-                Ok(frame) => {
-                    pt.position.fetch_add(960, Ordering::Relaxed);
-                    return Some(frame);
-                }
-                Err(flume::TryRecvError::Disconnected) => {
-                    self.opus_passthrough = None;
-                }
-                Err(flume::TryRecvError::Empty) => {}
+
+            if let Some(packet) = track.flow.take_opus() {
+                track.position.fetch_add(960, Ordering::Relaxed);
+                return Some(packet);
             }
         }
         None
@@ -246,34 +227,42 @@ impl Mixer {
                 );
             }
 
-            if track.slice_buf.len() != out_len {
-                track.slice_buf.resize(out_len, 0);
-            }
-            track.slice_buf.fill(0);
             let mut filled = 0usize;
 
+            // 1. Drain pending buffer
             if track.pending_pos < track.pending.len() {
                 let n = (out_len - filled).min(track.pending.len() - track.pending_pos);
-                track.slice_buf[filled..filled + n]
-                    .copy_from_slice(&track.pending[track.pending_pos..track.pending_pos + n]);
+                for (acc, &s) in self.mix_buf[filled..filled + n]
+                    .iter_mut()
+                    .zip(&track.pending[track.pending_pos..track.pending_pos + n])
+                {
+                    *acc += s as i32;
+                }
                 track.pending_pos += n;
                 filled += n;
+
                 if track.pending_pos >= track.pending.len() {
                     track.pending.clear();
                     track.pending_pos = 0;
                 }
             }
 
+            // 2. Pull new frames from flow
             'pull: while filled < out_len && !track.finished {
                 match track.flow.try_pop_frame() {
                     Ok(Some(frame)) => {
-                        let can = frame.len().min(out_len - filled);
-                        track.slice_buf[filled..filled + can].copy_from_slice(&frame[..can]);
-                        if can < frame.len() {
-                            track.pending.extend_from_slice(&frame[can..]);
+                        let n = frame.len().min(out_len - filled);
+                        for (acc, &s) in
+                            self.mix_buf[filled..filled + n].iter_mut().zip(&frame[..n])
+                        {
+                            *acc += s as i32;
+                        }
+
+                        if n < frame.len() {
+                            track.pending.extend_from_slice(&frame[n..]);
                             track.pending_pos = 0;
                         }
-                        filled += can;
+                        filled += n;
                     }
                     Ok(None) => break 'pull,
                     Err(_) => {
@@ -284,13 +273,6 @@ impl Mixer {
             }
 
             if filled > 0 {
-                for (mix_acc, &sample) in self
-                    .mix_buf
-                    .iter_mut()
-                    .zip(track.slice_buf.iter().take(filled))
-                {
-                    *mix_acc += sample as i32;
-                }
                 has_audio = true;
                 track
                     .position

@@ -13,10 +13,16 @@ use symphonia::core::{
 use tracing::{debug, error, warn};
 
 use crate::{
-    audio::processor::{AudioProcessor, DecoderCommand},
+    audio::{
+        AudioFrame,
+        processor::{AudioProcessor, DecoderCommand},
+    },
     common::types::AnyResult,
     protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
-    sources::{SourcePlugin, plugin::PlayableTrack},
+    sources::{
+        SourcePlugin,
+        plugin::{DecoderOutput, PlayableTrack},
+    },
 };
 
 fn url_regex() -> &'static Regex {
@@ -68,7 +74,6 @@ impl HttpSource {
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
             .ok_or("no audio track found")?;
 
-        // Calculate duration safely
         let duration = if let Some(n_frames) = track.codec_params.n_frames {
             if let Some(rate) = track.codec_params.sample_rate {
                 (n_frames as f64 / rate as f64 * 1000.0) as u64
@@ -79,7 +84,6 @@ impl HttpSource {
             0
         };
 
-        // Extract metadata
         let mut title = String::new();
         let mut author = String::new();
 
@@ -100,7 +104,6 @@ impl HttpSource {
             }
         }
 
-        // Fallback metadata from URL if tags are missing
         if title.is_empty() {
             title = url
                 .split('/')
@@ -116,10 +119,10 @@ impl HttpSource {
 
         Ok(TrackInfo {
             identifier: url.clone(),
-            is_seekable: true, // Symphonia sources are generally seekable if the container supports it
             author,
             length: duration,
-            is_stream: false, // If we probed it successfully, it's likely a file/VOD
+            is_seekable: true,
+            is_stream: false,
             position: 0,
             title,
             uri: Some(url),
@@ -151,7 +154,6 @@ impl SourcePlugin for HttpSource {
         let local_addr = routeplanner.as_ref().and_then(|rp| rp.get_address());
 
         let identifier_clone = identifier.clone();
-        // Probe in a blocking task to avoid blocking the async runtime
         let probe_result = tokio::task::spawn_blocking(move || {
             HttpSource::probe_metadata(identifier_clone, local_addr)
         })
@@ -161,8 +163,6 @@ impl SourcePlugin for HttpSource {
             Ok(Ok(info)) => LoadResult::Track(Track::new(info)),
             Ok(Err(e)) => {
                 warn!("Probing failed for {identifier}: {e}");
-                // If probing fails (e.g. not an audio file), we should return Empty
-                // so the manager knows no track was found, rather than erroring.
                 // This mimics Lavaplayer's behavior where unknown formats return null.
                 LoadResult::Empty {}
             }
@@ -207,18 +207,8 @@ pub struct HttpTrack {
 }
 
 impl PlayableTrack for HttpTrack {
-    fn start_decoding(
-        &self,
-        config: crate::config::player::PlayerConfig,
-    ) -> (
-        flume::Receiver<crate::audio::buffer::PooledBuffer>,
-        flume::Sender<DecoderCommand>,
-        flume::Receiver<String>,
-        Option<flume::Receiver<std::sync::Arc<Vec<u8>>>>,
-    ) {
-        let (tx, rx) = flume::bounded::<crate::audio::buffer::PooledBuffer>(
-            (config.buffer_duration_ms / 20) as usize,
-        );
+    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
+        let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
         let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
         let (err_tx, err_rx) = flume::bounded::<String>(1);
 
@@ -256,6 +246,6 @@ impl PlayableTrack for HttpTrack {
             }
         });
 
-        (rx, cmd_tx, err_rx, None)
+        (rx, cmd_tx, err_rx)
     }
 }

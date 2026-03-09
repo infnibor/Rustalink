@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+pub mod amazonmusic;
 pub mod anghami;
 pub mod applemusic;
 pub mod audiomack;
@@ -11,8 +12,10 @@ pub mod gaana;
 pub mod google_tts;
 pub mod http;
 pub mod jiosaavn;
+pub mod lastfm;
 pub mod local;
 pub mod mixcloud;
+pub mod netease;
 pub mod pandora;
 pub mod qobuz;
 pub mod reddit;
@@ -20,9 +23,12 @@ pub mod shazam;
 pub mod soundcloud;
 pub mod spotify;
 pub mod tidal;
+pub mod twitch;
+pub mod vkmusic;
 pub mod yandexmusic;
 pub mod youtube;
 
+pub use amazonmusic::*;
 pub use anghami::*;
 pub use applemusic::*;
 pub use audiomack::*;
@@ -34,8 +40,10 @@ pub use gaana::*;
 pub use google_tts::*;
 pub use http::*;
 pub use jiosaavn::*;
+pub use lastfm::*;
 pub use local::*;
 pub use mixcloud::*;
+pub use netease::*;
 pub use pandora::*;
 pub use qobuz::*;
 pub use reddit::*;
@@ -43,6 +51,8 @@ pub use shazam::*;
 pub use soundcloud::*;
 pub use spotify::*;
 pub use tidal::*;
+pub use twitch::*;
+pub use vkmusic::*;
 pub use yandexmusic::*;
 pub use youtube::*;
 
@@ -58,6 +68,7 @@ pub struct HttpProxyConfig {
 pub struct SourcesConfig {
     pub youtube: Option<YouTubeConfig>,
     pub spotify: Option<SpotifyConfig>,
+    pub amazonmusic: Option<AmazonMusicConfig>,
     pub http: Option<HttpSourceConfig>,
     pub local: Option<LocalSourceConfig>,
     pub jiosaavn: Option<JioSaavnConfig>,
@@ -74,10 +85,14 @@ pub struct SourcesConfig {
     pub shazam: Option<ShazamConfig>,
     pub mixcloud: Option<MixcloudConfig>,
     pub bandcamp: Option<BandcampConfig>,
+    pub twitch: Option<TwitchConfig>,
+    pub netease: Option<NeteaseMusicConfig>,
+    pub vkmusic: Option<VkMusicConfig>,
     pub yandexmusic: Option<YandexMusicConfig>,
     pub google_tts: Option<GoogleTtsConfig>,
     pub flowery: Option<FloweryConfig>,
     pub reddit: Option<RedditConfig>,
+    pub lastfm: Option<LastFmConfig>,
 }
 
 pub fn default_true() -> bool {

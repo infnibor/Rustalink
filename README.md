@@ -16,6 +16,7 @@
   <img src="https://img.shields.io/badge/Language-Rust-orange?style=for-the-badge&logo=rust" alt="Language">
   <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey?style=for-the-badge" alt="Platform">
   <a href="https://github.com/bongodevs/Rustalink/stargazers"><img src="https://img.shields.io/github/stars/bongodevs/Rustalink?style=for-the-badge&color=yellow&logo=github" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/Vibe-Coded-eb4034?style=for-the-badge" alt="Vibe Coded">
 </p>
 
 ---
@@ -50,7 +51,10 @@ Direct stream extraction and resolution.
 - [x] **Bandcamp**
 - [x] **MixCloud**
 - [x] **Audiomack**
+- [x] **Audius**
 - [x] **Reddit**
+- [x] **VK Music**
+- [x] **Twitch**
 - [x] **HTTP / Local**
 
 ### Mirroring
@@ -63,8 +67,9 @@ Resolution of metadata-only sources via secondary providers.
 - [x] **Shazam**
 - [x] **Anghami**
 - [x] **Pandora**
-- [ ] **Last.fm**
-
+- [x] **Last.fm**
+- [x] **Amazon Music**
+- [x] **Netease**: Direct playback with automatic mirroring fallback.
 ### Utilities
 - [x] **Text-to-Speech**
 
@@ -163,3 +168,5 @@ The compiled binary will be at `target/release/rustalink`.
 Rustalink is an independent reimplementation in Rust and does not copy source code from the following projects. We acknowledge their design and architectural influence:
 
 - **[Lavalink](https://github.com/lavalink-devs/Lavalink)** *(MIT License)* — The original standalone audio node. Rustalink implements the Lavalink v4 protocol and draws inspiration from its player management, session handling, and event emission design.
+- **[Amazon-Music-API](https://github.com/notdeltaxd/Amazon-Music-API)** — Our own reverse-engineered Amazon Music API wrapper. The Rustalink Amazon Music source is built directly on top of it.
+

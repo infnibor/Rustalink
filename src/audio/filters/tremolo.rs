@@ -20,11 +20,15 @@ impl AudioFilter for TremoloFilter {
             return;
         }
 
-        // Process per-sample (both L and R get the same multiplier per sample)
-        for sample in samples.iter_mut() {
+        // Process per-frame (both L and R get the same multiplier per frame)
+        for chunk in samples.chunks_exact_mut(2) {
             let multiplier = self.lfo.process();
-            let s = (*sample as f64 * multiplier) as i32;
-            *sample = s.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+
+            let left = (chunk[0] as f64 * multiplier) as i32;
+            chunk[0] = left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+
+            let right = (chunk[1] as f64 * multiplier) as i32;
+            chunk[1] = right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         }
     }
 
