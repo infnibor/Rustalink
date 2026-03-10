@@ -298,7 +298,23 @@ async fn fetch_worker(
 
         match fetch_chunk(&client, &url, offset, size).await {
             Ok(bytes) => {
-                let actual = bytes.len();
+                let actual = bytes.len() as u64;
+                if actual != size {
+                    warn!(
+                        "Worker {}: partial fetch for chunk {} (got {}/{} bytes)",
+                        worker_id, idx, actual, size
+                    );
+                    requeue_or_fatal(
+                        lock,
+                        cvar,
+                        idx,
+                        prior_retries,
+                        &format!("partial fetch: {}/{} bytes", actual, size),
+                    );
+                    tokio::time::sleep(Duration::from_millis(FETCH_WAIT_MS)).await;
+                    continue;
+                }
+
                 let mut state = lock.lock();
                 state.chunks.insert(idx, ChunkState::Ready(bytes));
                 trace!(
