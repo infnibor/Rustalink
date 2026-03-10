@@ -113,10 +113,8 @@ impl<'a> SessionState<'a> {
             }
         };
 
-        if let Ok(v) = serde_json::from_str::<Value>(&text)
-            && let Some(seq) = v["seq"].as_i64()
-        {
-            self.seq_ack.store(seq, Ordering::Relaxed);
+        if let Some(seq) = msg.seq {
+            self.seq_ack.store(seq as i64, Ordering::Relaxed);
         }
 
         let op = VoiceOp::from_raw(msg.op);
@@ -131,20 +129,32 @@ impl<'a> SessionState<'a> {
             Some(VoiceOp::SessionDescription) => self.handle_session_description(msg.d).await,
             Some(VoiceOp::HeartbeatAck) => self.handle_heartbeat_ack(msg.d),
             Some(VoiceOp::Resumed) => self.handle_resumed().await,
-            Some(VoiceOp::ClientConnect) => self.handle_user_connect(msg.d),
-            Some(VoiceOp::ClientDisconnect) => self.handle_user_disconnect(msg.d),
-            Some(
-                VoiceOp::Speaking
-                | VoiceOp::Video
-                | VoiceOp::Codecs
-                | VoiceOp::MediaSinkWants
-                | VoiceOp::VoiceBackendVersion
-                | VoiceOp::VoiceFlags
-                | VoiceOp::VoicePlatform,
-            ) => None, // Ignore informational events
+            Some(VoiceOp::ClientConnect) => self.handle_user_connect(msg.d).await,
+            Some(VoiceOp::ClientDisconnect) => self.handle_user_disconnect(msg.d).await,
+            Some(VoiceOp::Speaking | VoiceOp::Video | VoiceOp::Codecs | VoiceOp::VoiceFlags | VoiceOp::VoicePlatform | VoiceOp::DaveTransitionReady) => None, // Ignore informational events
+            Some(VoiceOp::VoiceBackendVersion) => {
+                info!("[{}] Voice Backend Version: {:?}", self.gateway.guild_id, msg.d);
+                None
+            }
+            Some(VoiceOp::MediaSinkWants) => {
+                debug!("[{}] Media Sink Wants: {:?}", self.gateway.guild_id, msg.d);
+                None
+            }
             Some(VoiceOp::DavePrepareTransition) => self.handle_prepare_transition(msg.d).await,
             Some(VoiceOp::DaveExecuteTransition) => self.handle_execute_transition(msg.d).await,
             Some(VoiceOp::DavePrepareEpoch) => self.handle_prepare_epoch(msg.d).await,
+            Some(VoiceOp::DaveMlsAnnounceCommitTransition) => {
+                self.handle_mls_commit_transition(msg.d).await
+            }
+            Some(VoiceOp::DaveMlsInvalidCommitWelcome) => {
+                warn!(
+                    "[{}] DAVE MLS Invalid Commit Welcome received, resetting session",
+                    self.gateway.guild_id
+                );
+                let mut dave = self.dave.lock().await;
+                self.reset_dave_session(&mut dave, 0).await;
+                None
+            }
             Some(_) => None, // Ignore other ops
             None => {
                 warn!(
@@ -174,7 +184,7 @@ impl<'a> SessionState<'a> {
         let mut dave = self.dave.lock().await;
         match op {
             25 => {
-                if let Ok(resps) = dave.process_external_sender(payload, &self.connected_users) {
+                if let Ok(resps) = dave.process_external_sender(payload) {
                     for resp in resps {
                         self.send_binary(28, &resp);
                     }
@@ -226,7 +236,7 @@ impl<'a> SessionState<'a> {
         dave: &mut DaveHandler,
         payload: &[u8],
     ) -> crate::common::types::AnyResult<()> {
-        if let Some(cw) = dave.process_proposals(payload, &self.connected_users)? {
+        if let Some(cw) = dave.process_proposals(payload)? {
             self.send_binary(28, &cw);
         }
         Ok(())
@@ -236,7 +246,9 @@ impl<'a> SessionState<'a> {
         dave.reset();
         self.send_json(31, serde_json::json!({ "transition_id": tid }));
         if let Ok(kp) = dave.setup_session(DAVE_INITIAL_VERSION) {
-            self.send_binary(26, &kp);
+            if !kp.is_empty() {
+                self.send_binary(26, &kp);
+            }
         }
     }
 
@@ -290,6 +302,22 @@ impl<'a> SessionState<'a> {
         {
             let mut state = self.persistent_state.lock().await;
             state.ssrc = self.ssrc;
+        }
+
+        if self.gateway.channel_id.0 > 0 {
+            let protocol_version = d["dave_protocol_version"]
+                .as_u64()
+                .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
+            
+            let mut dave = self.dave.lock().await;
+            if protocol_version > 0 {
+                dave.set_protocol_version(protocol_version);
+                if let Ok(kp) = dave.setup_session(protocol_version) {
+                    self.send_binary(26, &kp);
+                }
+            } else {
+                dave.reset();
+            }
         }
 
         match discover_ip(&self.udp_socket, addr, self.ssrc).await {
@@ -389,10 +417,24 @@ impl<'a> SessionState<'a> {
         }
 
         if self.gateway.channel_id.0 > 0 {
+            let protocol_version = d["dave_protocol_version"]
+                .as_u64()
+                .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
+            let mls_group_id = d["mls_group_id"].as_u64().unwrap_or(0);
+
             let mut dave = self.dave.lock().await;
-            if let Ok(kp) = dave.setup_session(DAVE_INITIAL_VERSION) {
-                self.send_binary(26, &kp);
+            if protocol_version > 0 {
+                dave.set_protocol_version(protocol_version);
+                if let Ok(kp) = dave.setup_session(protocol_version) {
+                    self.send_binary(26, &kp);
+                }
+            } else {
+                dave.reset();
             }
+            debug!(
+                "DAVE setup context: protocol_version={}, mls_group_id={}",
+                protocol_version, mls_group_id
+            );
         }
 
         self.backoff.reset();
@@ -445,20 +487,26 @@ impl<'a> SessionState<'a> {
         None
     }
 
-    fn handle_user_connect(&mut self, d: Value) -> Option<SessionOutcome> {
+    async fn handle_user_connect(&mut self, d: Value) -> Option<SessionOutcome> {
         if let Some(ids) = d["user_ids"].as_array() {
+            let mut uids = Vec::new();
             for id in ids {
                 if let Some(uid) = id.as_str().and_then(|s| s.parse::<u64>().ok()) {
                     self.connected_users.insert(UserId(uid));
+                    uids.push(uid);
                 }
+            }
+            if !uids.is_empty() {
+                self.dave.lock().await.add_users(&uids);
             }
         }
         None
     }
 
-    fn handle_user_disconnect(&mut self, d: Value) -> Option<SessionOutcome> {
+    async fn handle_user_disconnect(&mut self, d: Value) -> Option<SessionOutcome> {
         if let Some(uid) = d["user_id"].as_str().and_then(|s| s.parse::<u64>().ok()) {
             self.connected_users.remove(&UserId(uid));
+            self.dave.lock().await.remove_user(uid);
         }
         None
     }
@@ -495,7 +543,27 @@ impl<'a> SessionState<'a> {
             "[{}] DAVE Prepare Epoch: epoch={}, version={}",
             self.gateway.guild_id, epoch, ver
         );
-        self.dave.lock().await.prepare_epoch(epoch, ver);
+        if let Some(kp) = self.dave.lock().await.prepare_epoch(epoch, ver) {
+            if !kp.is_empty() {
+                self.send_binary(26, &kp);
+            }
+        }
+        None
+    }
+
+    async fn handle_mls_commit_transition(&mut self, d: Value) -> Option<SessionOutcome> {
+       let tid = d["transition_id"].as_u64().unwrap_or(0) as u16;
+        debug!(
+            "[{}] DAVE MLS Announce Commit Transition: tid={}",
+            self.gateway.guild_id, tid
+        );
+        let ver = d["protocol_version"].as_u64().map(|v| v as u16);
+        if let Some(v) = ver {
+            let mut dave = self.dave.lock().await;
+            if dave.prepare_transition(tid, v) && tid != 0 {
+                self.send_json(23, serde_json::json!({ "transition_id": tid }));
+            }
+        }
         None
     }
 
@@ -530,7 +598,11 @@ impl<'a> SessionState<'a> {
     }
 
     fn send_json(&self, op: u8, d: Value) {
-        let msg = VoiceGatewayMessage { op, d };
+        let msg = VoiceGatewayMessage {
+            op,
+            seq: None,
+            d,
+        };
         if let Ok(json) = serde_json::to_string(&msg) {
             let _ = self.tx.send(Message::Text(json.into()));
         }

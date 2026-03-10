@@ -99,7 +99,7 @@ impl VoiceGateway {
     pub async fn run(self) -> AnyResult<()> {
         let mut backoff = Backoff::new();
         let mut is_resume = false;
-        let seq_ack = Arc::new(AtomicI64::new(-1));
+        let seq_ack = Arc::new(AtomicI64::new(0));
         let persistent_state = Arc::new(tokio::sync::Mutex::new(PersistentSessionState::default()));
 
         while !self.outer_token.is_cancelled() {
@@ -137,7 +137,7 @@ impl VoiceGateway {
                         return Ok(());
                     }
                     is_resume = false;
-                    seq_ack.store(-1, Ordering::Relaxed);
+                    seq_ack.store(0, Ordering::Relaxed);
                     // Clear persistent state on identify to avoid using stale keys/addr
                     {
                         let mut state = persistent_state.lock().await;
@@ -345,6 +345,7 @@ impl VoiceGateway {
     ) {
         let msg = VoiceGatewayMessage {
             op: 5,
+            seq: None,
             d: serde_json::json!({
                 "speaking": if is_speaking { 1u8 } else { 0u8 },
                 "delay": 0,
@@ -390,6 +391,7 @@ impl VoiceGateway {
     fn identify_message(&self) -> VoiceGatewayMessage {
         VoiceGatewayMessage {
             op: 0,
+            seq: None,
             d: serde_json::json!({
                 "server_id": self.guild_id.to_string(),
                 "user_id": self.user_id.0.to_string(),
@@ -404,6 +406,7 @@ impl VoiceGateway {
     fn resume_message(&self, seq_ack: i64) -> VoiceGatewayMessage {
         VoiceGatewayMessage {
             op: 7,
+            seq: None,
             d: serde_json::json!({
                 "server_id": self.guild_id.to_string(),
                 "session_id": self.session_id,
