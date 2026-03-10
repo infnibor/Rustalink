@@ -145,11 +145,14 @@ pub async fn resolve_scored(
         .find(|s| s.can_handle(identifier))
         .map(|s| s.name().to_string());
 
+    let mut isrc_providers: Vec<String> = Vec::new();
     let mut free_providers: Vec<String> = Vec::new();
     let mut throttled_providers: Vec<String> = Vec::new();
 
     for provider in &mirrors.providers {
-        if isrc.is_empty() && provider.contains("%ISRC%") {
+        let is_isrc_provider = provider.contains("%ISRC%");
+
+        if is_isrc_provider && isrc.is_empty() {
             tracing::debug!("Skipping mirror provider '{}': track has no ISRC", provider);
             continue;
         }
@@ -175,7 +178,9 @@ pub async fn resolve_scored(
             }
         }
 
-        if cfg
+        if is_isrc_provider {
+            isrc_providers.push(resolved);
+        } else if cfg
             .throttled_prefixes
             .iter()
             .any(|p| resolved.starts_with(p.as_str()))
@@ -183,6 +188,27 @@ pub async fn resolve_scored(
             throttled_providers.push(resolved);
         } else {
             free_providers.push(resolved);
+        }
+    }
+
+    if !isrc_providers.is_empty() {
+        let mut futs: FuturesUnordered<_> = isrc_providers
+            .iter()
+            .map(|p| search_provider(manager, track_info, p, routeplanner.clone(), cfg, true))
+            .collect();
+
+        while let Some(result) = futs.next().await {
+            if let Some(mr) = result {
+                tracing::info!(
+                    "[Mirror] ISRC match \"{}\" | {} | {} => {} | score: {:.3}",
+                    track_info.title,
+                    track_info.author,
+                    fmt_ms(track_info.length),
+                    mr.provider,
+                    mr.score,
+                );
+                return Some(mr.track);
+            }
         }
     }
 
@@ -213,20 +239,6 @@ pub async fn resolve_scored(
                     global_best = Some(mr);
                 }
             }
-        }
-
-        if global_best
-            .as_ref()
-            .is_some_and(|b| b.score >= cfg.immediate_use)
-        {
-            let best = global_best.unwrap();
-            tracing::info!(
-                "[Mirror] free-phase winner \"{}\" via {} (score {:.3})",
-                track_info.title,
-                best.provider,
-                best.score
-            );
-            return Some(best.track);
         }
     }
 
