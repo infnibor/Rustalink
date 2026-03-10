@@ -274,6 +274,7 @@ async fn fetch_worker(
                 claimed
             }
             .map(|(idx, retries)| {
+                debug!("Worker {}: claiming chunk {} (retry={})", worker_id, idx, retries);
                 state.chunks.insert(idx, ChunkState::Downloading);
                 (idx, retries, total_len)
             })
@@ -340,10 +341,12 @@ fn requeue_or_fatal(
 ) {
     let mut state = lock.lock();
     if prior_retries >= MAX_FETCH_RETRIES {
-        state.fatal_error = Some(format!(
+        let msg = format!(
             "Chunk {}: permanently failed after {} retries: {}",
             idx, prior_retries, error
-        ));
+        );
+        warn!("SegmentedSource: fatal error - {}", msg);
+        state.fatal_error = Some(msg);
     } else {
         state
             .chunks
