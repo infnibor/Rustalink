@@ -45,7 +45,7 @@ pub async fn handle_socket(
         tokio::time::interval(std::time::Duration::from_secs(ping_interval_secs));
     ping_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let last_pong_ms = Arc::new(AtomicU64::new(0));
+    let last_pong_ms = Arc::new(AtomicU64::new(now_ms()));
     let watchdog_armed = Arc::new(AtomicBool::new(false));
 
     let (mut ws_sink, mut ws_stream) = socket.split();
@@ -66,7 +66,7 @@ pub async fn handle_socket(
             _ = ping_interval.tick() => {
                 if watchdog_armed.load(Relaxed) {
                     let elapsed_ms = now_ms().saturating_sub(last_pong_ms.load(Relaxed));
-                    if elapsed_ms > ping_interval_secs * 3 * 1000 {
+                    if elapsed_ms > ping_interval_secs * 4 * 1000 {
                         warn!("Client pong timeout ({elapsed_ms}ms elapsed), closing: session={session_id}");
                         break;
                     }
@@ -74,10 +74,7 @@ pub async fn handle_socket(
 
                 match ws_tx.try_send(Message::Ping(Vec::new().into())) {
                     Ok(()) => {
-                        if !watchdog_armed.load(Relaxed) {
-                            last_pong_ms.store(now_ms(), Relaxed);
-                            watchdog_armed.store(true, Relaxed);
-                        }
+                        watchdog_armed.store(true, Relaxed);
                     }
                     Err(TrySendError::Closed(_)) => break,
                     Err(TrySendError::Full(_)) => warn!("WS ping dropped (channel full): session={session_id}"),

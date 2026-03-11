@@ -217,7 +217,7 @@ impl PlayableTrack for HttpTrack {
         let proxy = self.proxy.clone();
 
         let handle = tokio::runtime::Handle::current();
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             let _guard = handle.enter();
             let reader = match reader::HttpReader::new(&url, local_addr, proxy) {
                 Ok(r) => Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
@@ -235,9 +235,14 @@ impl PlayableTrack for HttpTrack {
 
             match AudioProcessor::new(reader, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
                 Ok(mut processor) => {
-                    if let Err(e) = processor.run() {
-                        error!("HTTP track audio processor error: {e}");
-                    }
+                    std::thread::Builder::new()
+                        .name(format!("http-decoder-{}", url))
+                        .spawn(move || {
+                            if let Err(e) = processor.run() {
+                                error!("HTTP track audio processor error: {e}");
+                            }
+                        })
+                        .expect("failed to spawn http decoder thread");
                 }
                 Err(e) => {
                     error!("HTTP track failed to initialize processor: {e}");

@@ -43,13 +43,11 @@ impl LiveHlsReader {
     ) -> Self {
         let (chunk_tx, chunk_rx) = flume::bounded::<Vec<u8>>(16);
 
-        std::thread::Builder::new()
-            .name("twitch-live-hls".into())
-            .spawn(move || {
-                let _guard = handle.enter();
+        tokio::task::spawn_blocking(move || {
+            let _guard = handle.enter();
 
-                let mut builder =
-                    reqwest::Client::builder().timeout(std::time::Duration::from_secs(15));
+            let mut builder =
+                reqwest::Client::builder().timeout(std::time::Duration::from_secs(15));
 
                 if let Some(ip) = local_addr {
                     builder = builder.local_address(ip);
@@ -111,8 +109,7 @@ impl LiveHlsReader {
                     let wait = (target_duration / 2.0).max(1.0);
                     std::thread::sleep(std::time::Duration::from_secs_f64(wait));
                 }
-            })
-            .expect("failed to spawn twitch live HLS thread");
+            });
 
         Self {
             chunk_rx,
@@ -223,9 +220,11 @@ impl PlayableTrack for TwitchTrack {
         let proxy = self.proxy.clone();
         let handle = tokio::runtime::Handle::current();
 
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             let _guard = handle.enter();
-            let reader = Box::new(LiveHlsReader::new(url, local_addr, proxy, handle.clone()))
+            let url_for_reader = url.clone();
+            let url_for_name = url.clone();
+            let reader = Box::new(LiveHlsReader::new(url_for_reader, local_addr, proxy, handle.clone()))
                 as Box<dyn MediaSource>;
 
             match AudioProcessor::new(
@@ -237,12 +236,18 @@ impl PlayableTrack for TwitchTrack {
                 config,
             ) {
                 Ok(mut processor) => {
-                    if let Err(e) = processor.run() {
-                        tracing::error!("Twitch HLS processor error: {e}");
-                    }
+                    let url_for_log = url_for_name.clone();
+                    std::thread::Builder::new()
+                        .name(format!("twitch-decoder-{}", url_for_name))
+                        .spawn(move || {
+                            if let Err(e) = processor.run() {
+                                tracing::error!("Twitch HLS processor error for {}: {}", url_for_log, e);
+                            }
+                        })
+                        .expect("failed to spawn twitch decoder thread");
                 }
                 Err(e) => {
-                    tracing::error!("Twitch HLS processor init failed: {e}");
+                    tracing::error!("Twitch HLS processor init failed for {}: {}", url, e);
                     let _ = err_tx.send(format!("Failed to initialize processor: {e}"));
                 }
             }

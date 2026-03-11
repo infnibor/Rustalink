@@ -240,7 +240,7 @@ impl PlayableTrack for LocalTrack {
         let path = self.path.clone();
 
         let handle = tokio::runtime::Handle::current();
-        std::thread::spawn(move || {
+        tokio::task::spawn_blocking(move || {
             let _guard = handle.enter();
             let source = match LocalFileSource::open(&path) {
                 Ok(s) => Box::new(s) as Box<dyn symphonia::core::io::MediaSource>,
@@ -258,9 +258,14 @@ impl PlayableTrack for LocalTrack {
 
             match AudioProcessor::new(source, kind, tx, cmd_rx, Some(err_tx.clone()), config) {
                 Ok(mut processor) => {
-                    if let Err(e) = processor.run() {
-                        error!("LocalTrack audio processor error: {e}");
-                    }
+                    std::thread::Builder::new()
+                        .name(format!("local-decoder-{}", path))
+                        .spawn(move || {
+                            if let Err(e) = processor.run() {
+                                error!("LocalTrack audio processor error: {e}");
+                            }
+                        })
+                        .expect("failed to spawn local decoder thread");
                 }
                 Err(e) => {
                     error!("LocalTrack failed to initialize processor: {e}");

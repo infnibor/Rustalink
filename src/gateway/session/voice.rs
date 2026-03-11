@@ -1,6 +1,9 @@
 use std::{
     net::SocketAddr,
-    sync::{Arc, atomic::Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -17,7 +20,7 @@ use crate::{
         constants::{
             DISCOVERY_PACKET_SIZE, FRAME_DURATION_MS, IP_DISCOVERY_RETRIES,
             IP_DISCOVERY_RETRY_INTERVAL_MS, IP_DISCOVERY_TIMEOUT_SECS, MAX_OPUS_FRAME_SIZE,
-            MAX_SILENCE_FRAMES, PCM_FRAME_SAMPLES, UDP_KEEPALIVE_GAP_MS,
+            PCM_FRAME_SAMPLES, SILENCE_FRAME, UDP_KEEPALIVE_GAP_MS,
         },
         udp_link::VoiceTransport,
     },
@@ -105,6 +108,32 @@ pub async fn speak_loop(config: SpeakConfig) -> AnyResult<()> {
         rtp_state,
     )?;
 
+    let keepalive_counter = Arc::new(AtomicU32::new(0));
+
+    {
+        let socket = config.socket.clone();
+        let addr = config.addr;
+        let counter = keepalive_counter.clone();
+        let cancel = config.cancel_token.clone();
+        let gap = Duration::from_millis(UDP_KEEPALIVE_GAP_MS);
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(gap);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => break,
+                    _ = interval.tick() => {
+                        let n = counter.fetch_add(1, Ordering::Relaxed);
+                        if let Err(e) = socket.send_to(&n.to_be_bytes(), addr).await {
+                            error!("UDP keepalive send failed: {e}");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     let mut encoder = Encoder::new().map_err(map_boxed_err)?;
     let mut session = VoiceSession::new(config, transport);
     session.run(&mut encoder).await
@@ -114,6 +143,7 @@ struct VoiceSession {
     config: SpeakConfig,
     transport: VoiceTransport,
     is_speaking: bool,
+    speaking_holdoff: bool,
     last_tx_time: Instant,
     active_silence: u32,
     idle_frames: u32,
@@ -125,6 +155,7 @@ impl VoiceSession {
             config,
             transport,
             is_speaking: false,
+            speaking_holdoff: false,
             last_tx_time: Instant::now(),
             active_silence: 0,
             idle_frames: 0,
@@ -180,6 +211,10 @@ impl VoiceSession {
             if ready_from_ts {
                 self.update_speaking_status(true);
                 self.config.frames_sent.fetch_add(1, Ordering::Relaxed);
+                if self.speaking_holdoff {
+                    self.speaking_holdoff = false;
+                    return self.send_opus_silence().await;
+                }
                 return self.encode_and_send(encoder, ts_pcm, opus).await;
             }
 
@@ -189,6 +224,10 @@ impl VoiceSession {
                 self.reset_timers();
                 self.update_speaking_status(true);
                 self.config.frames_sent.fetch_add(1, Ordering::Relaxed);
+                if self.speaking_holdoff {
+                    self.speaking_holdoff = false;
+                    return self.send_opus_silence().await;
+                }
                 return self.encrypt_and_send(&data).await;
             }
 
@@ -201,12 +240,9 @@ impl VoiceSession {
                     self.active_silence -= 1;
                     pcm.fill(0);
                     self.update_speaking_status(true);
-                } else if self.idle_frames > MAX_SILENCE_FRAMES {
-                    self.update_speaking_status(false);
-                    return self.maintain_udp().await;
                 } else {
-                    pcm.fill(0);
-                    self.update_speaking_status(true);
+                    self.update_speaking_status(false);
+                    return self.send_opus_silence().await;
                 }
             }
 
@@ -221,6 +257,10 @@ impl VoiceSession {
                     self.config.frames_sent.fetch_add(1, Ordering::Relaxed);
                 } else {
                     self.config.frames_nulled.fetch_add(1, Ordering::Relaxed);
+                }
+                if self.speaking_holdoff {
+                    self.speaking_holdoff = false;
+                    return self.send_opus_silence().await;
                 }
                 return self.encode_and_send(encoder, pcm, opus).await;
             }
@@ -242,6 +282,9 @@ impl VoiceSession {
         if is_speaking != self.is_speaking {
             self.is_speaking = is_speaking;
             let _ = self.config.speaking_tx.send(self.is_speaking);
+            if is_speaking {
+                self.speaking_holdoff = true;
+            }
         }
     }
 
@@ -262,7 +305,7 @@ impl VoiceSession {
         if size > 0 {
             self.encrypt_and_send(&opus[..size]).await?;
         } else {
-            self.maintain_udp().await?;
+            self.send_opus_silence().await?;
         }
 
         Ok(())
@@ -298,13 +341,9 @@ impl VoiceSession {
         Ok(())
     }
 
-    async fn maintain_udp(&mut self) -> AnyResult<()> {
-        let gap = Duration::from_millis(UDP_KEEPALIVE_GAP_MS);
-        if self.last_tx_time.elapsed() >= gap {
-            self.transport.send_keepalive().await?;
-            self.last_tx_time = Instant::now();
-        }
-        Ok(())
+    async fn send_opus_silence(&mut self) -> AnyResult<()> {
+        self.config.frames_nulled.fetch_add(1, Ordering::Relaxed);
+        self.encrypt_and_send(&SILENCE_FRAME).await
     }
 
     fn reset_timers(&mut self) {
