@@ -9,11 +9,19 @@ pub async fn get_info(State(state): State<Arc<AppState>>) -> Json<protocol::Info
     tracing::info!("GET /v4/info");
 
     let version_str = env!("CARGO_PKG_VERSION");
-    let (major, minor, patch, pre_release) = parse_semver(version_str);
+    let (major, minor, patch, mut pre_release) = parse_semver(version_str);
+
+    let mut semver = version_str.to_string();
+    if pre_release.is_none() {
+        if let Some(pre) = option_env!("RUSTALINK_PRE_RELEASE") {
+            pre_release = Some(pre.to_string());
+            semver = format!("{}-{}", version_str, pre);
+        }
+    }
 
     Json(protocol::Info {
         version: protocol::Version {
-            semver: version_str.to_string(),
+            semver,
             major: if major == 0 { 4 } else { major },
             minor,
             patch,

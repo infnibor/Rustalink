@@ -50,6 +50,33 @@ fn main() {
 
     let version_string = build_version_string(&git);
     println!("cargo:rustc-env=GIT_VERSION_STRING={}", version_string);
+
+    if let Some(pre) = detect_pre_release() {
+        println!("cargo:rustc-env=RUSTALINK_PRE_RELEASE={}", pre);
+    }
+}
+
+fn detect_pre_release() -> Option<String> {
+    if let Ok(v) = env::var("GITHUB_REF_NAME") {
+        if let Some(idx) = v.find('-') {
+            return Some(v[idx + 1..].to_string());
+        }
+    }
+
+    if let Some(desc) = git_output(&["describe", "--tags", "--always"]) {
+        if let Some(idx) = desc.find('-') {
+            let part = &desc[idx + 1..];
+            if let Some(next_dash) = part.find('-') {
+                let pre = &part[..next_dash];
+                if !pre.chars().all(char::is_numeric) {
+                    return Some(pre.to_string());
+                }
+            } else if !part.chars().all(char::is_numeric) {
+                return Some(part.to_string());
+            }
+        }
+    }
+    None
 }
 
 struct GitInfo {
