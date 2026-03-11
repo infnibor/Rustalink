@@ -65,10 +65,9 @@ impl VoiceTransport {
         })
     }
 
-    pub async fn send_keepalive(&self) -> AnyResult<()> {
-        let mut keepalive = [0u8; 9];
-        keepalive[0..4].copy_from_slice(&self.ssrc.to_be_bytes());
-        self.socket.send_to(&keepalive, self.address).await?;
+    pub async fn send_keepalive(&self, counter: u32) -> AnyResult<()> {
+        let payload = counter.to_be_bytes();
+        self.socket.send_to(&payload, self.address).await?;
         Ok(())
     }
 
