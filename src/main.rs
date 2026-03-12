@@ -47,6 +47,12 @@ async fn main() -> AnyResult<()> {
     let lyrics_manager = Arc::new(rustalink::lyrics::LyricsManager::new(&config));
     let youtube_ctx = source_manager.youtube_stream_ctx.clone();
 
+    let process_stat = perf_monitor::cpu::ProcessStat::cur().map_err(|e| {
+        Box::new(std::io::Error::other(format!(
+            "failed to init ProcessStat: {e}"
+        ))) as rustalink::common::types::AnyError
+    })?;
+
     let shared_state = Arc::new(AppState {
         start_time: std::time::Instant::now(),
         sessions: DashMap::new(),
@@ -58,6 +64,7 @@ async fn main() -> AnyResult<()> {
         youtube: youtube_ctx,
         system_state: parking_lot::Mutex::new(sysinfo::System::new_all()),
         last_system_refresh: parking_lot::Mutex::new(std::time::Instant::now()),
+        process_stat: parking_lot::Mutex::new(process_stat),
     });
 
     monitoring::prometheus::init(shared_state.clone());

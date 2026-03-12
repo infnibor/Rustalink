@@ -1,13 +1,17 @@
-use crate::sources::{
-    http::HttpTrack,
-    plugin::{DecoderOutput, PlayableTrack},
-};
 use std::net::IpAddr;
+
+use crate::{
+    config::HttpProxyConfig,
+    sources::{
+        http::HttpTrack,
+        plugin::{DecoderOutput, PlayableTrack},
+    },
+};
 
 pub struct NeteaseTrack {
     pub stream_url: String,
     pub local_addr: Option<IpAddr>,
-    pub proxy: Option<crate::config::HttpProxyConfig>,
+    pub proxy: Option<HttpProxyConfig>,
 }
 
 impl PlayableTrack for NeteaseTrack {

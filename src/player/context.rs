@@ -149,7 +149,20 @@ impl PlayerContext {
         mixer.stop_all();
     }
 
-    pub fn to_player_response(&self) -> Player {
+    pub async fn to_player_response(&self) -> Player {
+        let dave = {
+            let engine = self.engine.lock().await;
+            if let Some(dave_shared) = &engine.dave {
+                let dave = dave_shared.lock().await;
+                Some(crate::player::state::DaveState {
+                    protocol_version: dave.protocol_version(),
+                    privacy_code: dave.voice_privacy_code(),
+                })
+            } else {
+                None
+            }
+        };
+
         Player {
             guild_id: self.guild_id.clone(),
             track: self.track_info.clone(),
@@ -172,6 +185,61 @@ impl PlayerContext {
                 channel_id: self.voice.channel_id.clone(),
             },
             filters: self.filters.clone(),
+            dave,
+        }
+    }
+
+    pub async fn to_response(arc: Arc<tokio::sync::RwLock<Self>>) -> Player {
+        let (guild_id, track_info, volume, paused, position, voice, ping, filters, engine_shared) = {
+            let this = arc.read().await;
+            (
+                this.guild_id.clone(),
+                this.track_info.clone(),
+                this.volume,
+                this.paused,
+                this.track_handle
+                    .as_ref()
+                    .map(|h| h.get_position())
+                    .unwrap_or(this.position),
+                this.voice.clone(),
+                this.ping.load(Ordering::Acquire),
+                this.filters.clone(),
+                this.engine.clone(),
+            )
+        };
+
+        let dave = {
+            let engine = engine_shared.lock().await;
+            if let Some(dave_shared) = &engine.dave {
+                let dave = dave_shared.lock().await;
+                Some(crate::player::state::DaveState {
+                    protocol_version: dave.protocol_version(),
+                    privacy_code: dave.voice_privacy_code(),
+                })
+            } else {
+                None
+            }
+        };
+
+        Player {
+            guild_id,
+            track: track_info,
+            volume,
+            paused,
+            state: PlayerState {
+                time: crate::common::utils::now_ms(),
+                position,
+                connected: !voice.token.is_empty(),
+                ping,
+            },
+            voice: VoiceState {
+                token: voice.token,
+                endpoint: voice.endpoint,
+                session_id: voice.session_id,
+                channel_id: voice.channel_id,
+            },
+            filters,
+            dave,
         }
     }
 }

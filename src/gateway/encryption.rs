@@ -31,6 +31,7 @@ pub struct DaveHandler {
     pending_handshake: Vec<(Vec<u8>, bool)>,
     was_ready: bool,
     recognized_users: HashSet<UserId>,
+    cached_user_ids: Vec<u64>,
 }
 
 impl DaveHandler {
@@ -49,6 +50,7 @@ impl DaveHandler {
             pending_handshake: Vec::new(),
             was_ready: false,
             recognized_users,
+            cached_user_ids: vec![user_id.0],
         }
     }
 
@@ -56,12 +58,26 @@ impl DaveHandler {
         for &uid in uids {
             self.recognized_users.insert(UserId(uid));
         }
+        self.update_user_cache();
         debug!("DAVE adding users: {:?}", uids);
     }
 
     pub fn remove_user(&mut self, uid: u64) {
-        self.recognized_users.remove(&UserId(uid));
+        if self.recognized_users.remove(&UserId(uid)) {
+            self.update_user_cache();
+        }
         debug!("DAVE removing user: {}", uid);
+    }
+
+    fn update_user_cache(&mut self) {
+        self.cached_user_ids.clear();
+        self.cached_user_ids
+            .extend(self.recognized_users.iter().map(|u| u.0));
+        self.cached_user_ids.sort_unstable();
+    }
+
+    pub fn protocol_version(&self) -> u16 {
+        self.protocol_version
     }
 
     pub fn set_protocol_version(&mut self, version: u16) {
@@ -96,17 +112,17 @@ impl DaveHandler {
         debug!("DAVE session setup (v{})", version);
         let key_package = session.create_key_package().map_err(map_boxed_err)?;
 
-        if let Some(saved) = self.saved_external_sender.clone() {
-            if let Some(sess) = &mut self.session {
-                match sess.set_external_sender(&saved) {
-                    Ok(()) => {
-                        self.external_sender_set = true;
-                        debug!("DAVE re-applied saved external sender after epoch reset");
-                    }
-                    Err(e) => {
-                        warn!("DAVE failed to re-apply saved external sender: {e}");
-                        self.saved_external_sender = None;
-                    }
+        if let Some(saved) = self.saved_external_sender.clone()
+            && let Some(sess) = &mut self.session
+        {
+            match sess.set_external_sender(&saved) {
+                Ok(()) => {
+                    self.external_sender_set = true;
+                    debug!("DAVE re-applied saved external sender after epoch reset");
+                }
+                Err(e) => {
+                    warn!("DAVE failed to re-apply saved external sender: {e}");
+                    self.saved_external_sender = None;
                 }
             }
         }
@@ -170,10 +186,9 @@ impl DaveHandler {
                     "DAVE processing {} buffered proposals",
                     self.pending_proposals.len()
                 );
-                let user_ids: Vec<u64> = self.recognized_users.iter().map(|u| u.0).collect();
                 for prop_data in std::mem::take(&mut self.pending_proposals) {
                     if let Ok(Some(res)) =
-                        Self::do_process_proposals(session, &prop_data, &user_ids)
+                        Self::do_process_proposals(session, &prop_data, &self.cached_user_ids)
                     {
                         responses.push(res);
                     }
@@ -267,8 +282,7 @@ impl DaveHandler {
             Some(s) => s,
             None => return Ok(None),
         };
-        let user_ids: Vec<u64> = self.recognized_users.iter().map(|u| u.0).collect();
-        Self::do_process_proposals(session, data, &user_ids)
+        Self::do_process_proposals(session, data, &self.cached_user_ids)
     }
 
     fn do_process_proposals(
@@ -323,6 +337,12 @@ impl DaveHandler {
 
         Ok(packet.to_vec())
     }
+
+    pub fn voice_privacy_code(&self) -> Option<String> {
+        self.session
+            .as_ref()
+            .and_then(|s| s.voice_privacy_code().map(|c| c.to_string()))
+    }
 }
 
 #[inline]
@@ -338,7 +358,7 @@ mod tests {
     #[test]
     fn test_handshake_buffering_logic() {
         let mut handler = DaveHandler::new(UserId(1), ChannelId(1));
-        
+
         // Buffering should happen if external_sender_set is false
         let welcome_data = vec![0, 42, 1, 2, 3]; // tid 42
         let res = handler.process_welcome(&welcome_data);

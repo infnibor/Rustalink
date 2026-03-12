@@ -15,20 +15,27 @@ pub async fn get_players(
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players", session_id);
 
-    let Some(session) = state.sessions.get(&session_id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(crate::common::RustalinkError::not_found(
-                format!("Session not found: {}", session_id),
-                format!("/v4/sessions/{}/players", session_id),
-            )),
-        )
-            .into_response();
+    let player_arcs: Vec<_> = {
+        let Some(session) = state.sessions.get(&session_id) else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(crate::common::RustalinkError::not_found(
+                    format!("Session not found: {}", session_id),
+                    format!("/v4/sessions/{}/players", session_id),
+                )),
+            )
+                .into_response();
+        };
+        session
+            .players
+            .iter()
+            .map(|kv| kv.value().clone())
+            .collect()
     };
 
     let mut players = Vec::new();
-    for arc in session.players.iter().map(|kv| kv.value().clone()) {
-        players.push(arc.read().await.to_player_response());
+    for arc in player_arcs {
+        players.push(crate::player::PlayerContext::to_response(arc).await);
     }
 
     players.sort_by(|a, b| a.guild_id.cmp(&b.guild_id));
@@ -73,18 +80,22 @@ pub async fn get_player(
 ) -> impl IntoResponse {
     tracing::info!("GET /v4/sessions/{}/players/{}", session_id, guild_id);
 
-    let Some(session) = state.sessions.get(&session_id) else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(crate::common::RustalinkError::not_found(
-                format!("Session not found: {}", session_id),
-                format!("/v4/sessions/{}/players/{}", session_id, guild_id),
-            )),
-        )
-            .into_response();
+    let player_arc = {
+        let Some(session) = state.sessions.get(&session_id) else {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(crate::common::RustalinkError::not_found(
+                    format!("Session not found: {}", session_id),
+                    format!("/v4/sessions/{}/players/{}", session_id, guild_id),
+                )),
+            )
+                .into_response();
+        };
+
+        session.players.get(&guild_id).map(|kv| kv.value().clone())
     };
 
-    let Some(player_arc) = session.players.get(&guild_id).map(|kv| kv.value().clone()) else {
+    let Some(arc) = player_arc else {
         return (
             StatusCode::NOT_FOUND,
             Json(crate::common::RustalinkError::not_found(
@@ -95,6 +106,9 @@ pub async fn get_player(
             .into_response();
     };
 
-    let player = player_arc.read().await;
-    (StatusCode::OK, Json(player.to_player_response())).into_response()
+    (
+        StatusCode::OK,
+        Json(crate::player::PlayerContext::to_response(arc).await),
+    )
+        .into_response()
 }
