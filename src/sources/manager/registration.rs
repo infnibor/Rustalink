@@ -52,8 +52,6 @@ pub fn register_all(
     yt_ctx
 }
 
-
-
 fn register_core_sources(
     sources: &mut Vec<BoxedSource>,
     config: &crate::config::AppConfig,
