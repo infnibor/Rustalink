@@ -66,7 +66,13 @@ impl FlowController {
         while let Ok(frame_data) = self.frame_rx.recv() {
             match frame_data {
                 AudioFrame::Pcm(pooled) => {
+                    if pooled.is_empty() {
+                        self.decoder_done = true;
+                        crate::audio::buffer::release_buffer(pooled);
+                        break;
+                    }
                     self.pending_pcm.extend_from_slice(&pooled);
+                    crate::audio::buffer::release_buffer(pooled);
 
                     while self.pending_pcm.len() >= FRAME_SIZE_SAMPLES {
                         let mut frame = acquire_buffer(FRAME_SIZE_SAMPLES);
@@ -89,6 +95,21 @@ impl FlowController {
                         return;
                     }
                 }
+            }
+        }
+
+        self.decoder_done = true;
+
+        if !self.pending_pcm.is_empty() {
+            let mut frame = acquire_buffer(FRAME_SIZE_SAMPLES);
+            frame.extend(self.pending_pcm.drain(..));
+            frame.resize(FRAME_SIZE_SAMPLES, 0); // Pad with silence
+            self.process_frame(&mut frame);
+
+            if let Some(tx) = &self.frame_tx {
+                let _ = tx.send(AudioFrame::Pcm(frame));
+            } else {
+                crate::audio::buffer::release_buffer(frame);
             }
         }
     }
