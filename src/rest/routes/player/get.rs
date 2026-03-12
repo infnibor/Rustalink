@@ -28,7 +28,7 @@ pub async fn get_players(
 
     let mut players = Vec::new();
     for arc in session.players.iter().map(|kv| kv.value().clone()) {
-        players.push(arc.read().await.to_player_response().await);
+        players.push(crate::player::PlayerContext::to_response(arc).await);
     }
 
     players.sort_by(|a, b| a.guild_id.cmp(&b.guild_id));
@@ -95,6 +95,5 @@ pub async fn get_player(
             .into_response();
     };
 
-    let player = player_arc.read().await;
-    (StatusCode::OK, Json(player.to_player_response().await)).into_response()
+    (StatusCode::OK, Json(crate::player::PlayerContext::to_response(player_arc).await)).into_response()
 }

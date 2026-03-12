@@ -46,19 +46,22 @@ pub async fn discover_ip(
             continue;
         }
 
-        let mut buf = [0u8; DISCOVERY_PACKET_SIZE];
+        let mut client_buf = [0u8; DISCOVERY_PACKET_SIZE];
         match tokio::time::timeout(
             Duration::from_secs(IP_DISCOVERY_TIMEOUT_SECS),
-            socket.recv(&mut buf),
+            socket.recv_from(&mut client_buf),
         )
         .await
         {
-            Ok(Ok(n)) if n >= DISCOVERY_PACKET_SIZE => {
-                let ip = std::str::from_utf8(&buf[8..72])
+            Ok(Ok((n, peer))) if n >= DISCOVERY_PACKET_SIZE => {
+                if peer != addr {
+                    continue;
+                }
+                let ip = std::str::from_utf8(&client_buf[8..72])
                     .map_err(|e| GatewayError::Discovery(e.to_string()))?
                     .trim_matches('\0')
                     .to_string();
-                let port = u16::from_be_bytes([buf[72], buf[73]]);
+                let port = u16::from_be_bytes([client_buf[72], client_buf[73]]);
                 return Ok((ip, port));
             }
             _ => {
@@ -283,11 +286,12 @@ impl VoiceSession {
 
     async fn send_raw(&mut self, data: &[u8]) -> Result<(), GatewayError> {
         let mut dave = self.config.dave.lock().await;
-        if let Ok(encrypted) = dave.encrypt_opus(data) {
-            drop(dave);
-            self.transport.transmit_opus(&encrypted).await?;
-            self.last_tx_time = Instant::now();
-        }
+        let encrypted = dave
+            .encrypt_opus(data)
+            .map_err(|e| GatewayError::Encryption(e.to_string()))?;
+        drop(dave);
+        self.transport.transmit_opus(&encrypted).await?;
+        self.last_tx_time = Instant::now();
         Ok(())
     }
 

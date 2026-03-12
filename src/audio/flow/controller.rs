@@ -98,8 +98,9 @@ impl FlowController {
             while self.pending_pcm.len() < FRAME_SIZE_SAMPLES {
                 match self.frame_rx.try_recv() {
                     Ok(AudioFrame::Pcm(chunk)) if chunk.is_empty() => {
+                        self.decoder_done = true;
+                        crate::audio::buffer::release_buffer(chunk);
                         self.pending_pcm.clear();
-                        self.decoder_done = false;
                     }
                     Ok(AudioFrame::Pcm(chunk)) => {
                         self.pending_pcm.extend_from_slice(&chunk);

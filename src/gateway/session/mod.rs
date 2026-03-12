@@ -12,7 +12,7 @@ use tracing::{debug, error, warn};
 use crate::{
     audio::{Mixer, filters::FilterChain},
     common::types::{ChannelId, GuildId, SessionId, Shared, UserId},
-    gateway::constants::{VOICE_GATEWAY_VERSION, WRITE_TASK_SHUTDOWN_MS},
+    gateway::constants::{VOICE_GATEWAY_VERSION},
     protocol::RustalinkEvent,
 };
 
@@ -172,7 +172,7 @@ impl VoiceGateway {
         let write_token = conn_token.clone();
         let (ws_tx, mut ws_rx) = unbounded_channel::<Message>();
 
-        tokio::spawn(async move {
+        let writer_handle = tokio::spawn(async move {
             while let Some(msg) = tokio::select! {
                 biased;
                 _ = write_token.cancelled() => None,
@@ -198,11 +198,23 @@ impl VoiceGateway {
         })?;
 
         // Wait for Op 8 HELLO
-        if let Some(Ok(m)) = read.next().await
-            && let Some(out) = self.handle_message(&mut state, m).await
-        {
+        let outcome = match read.next().await {
+            Some(Ok(m)) => self.handle_message(&mut state, m).await,
+            _ => Some(SessionOutcome::Reconnect),
+        };
+
+        if let Some(out) = outcome {
             conn_token.cancel();
+            writer_handle.abort();
+            let _ = writer_handle.await;
             return Ok(out);
+        }
+
+        if !state.has_heartbeat() {
+            conn_token.cancel();
+            writer_handle.abort();
+            let _ = writer_handle.await;
+            return Ok(SessionOutcome::Reconnect);
         }
 
         let handshake = if is_resume {
@@ -248,11 +260,8 @@ impl VoiceGateway {
         };
 
         conn_token.cancel();
-        let _ = tokio::time::timeout(
-            std::time::Duration::from_millis(WRITE_TASK_SHUTDOWN_MS),
-            tokio::task::yield_now(),
-        )
-        .await;
+        writer_handle.abort();
+        let _ = writer_handle.await;
 
         Ok(outcome)
     }

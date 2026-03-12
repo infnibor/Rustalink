@@ -18,6 +18,9 @@ pub enum GatewayError {
     #[error("Encoding error: {0}")]
     Encoding(String),
 
+    #[error("Encryption error: {0}")]
+    Encryption(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 

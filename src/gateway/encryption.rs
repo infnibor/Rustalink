@@ -70,7 +70,10 @@ impl DaveHandler {
     }
 
     fn update_user_cache(&mut self) {
-        self.cached_user_ids = self.recognized_users.iter().map(|u| u.0).collect();
+        self.cached_user_ids.clear();
+        self.cached_user_ids
+            .extend(self.recognized_users.iter().map(|u| u.0));
+        self.cached_user_ids.sort_unstable();
     }
 
     pub fn protocol_version(&self) -> u16 {

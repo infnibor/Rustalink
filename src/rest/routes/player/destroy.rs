@@ -30,20 +30,24 @@ pub async fn destroy_player(
     };
 
     if let Some(player_arc) = session.players.get(&guild_id).map(|kv| kv.value().clone()) {
-        {
+        let track_info = {
             let player = player_arc.read().await;
-            if player.track.is_some()
-                && let Some(track_data) = player.to_player_response().await.track
-            {
-                let end_event = protocol::OutgoingMessage::Event {
-                    event: Box::new(protocol::RustalinkEvent::TrackEnd {
-                        guild_id: guild_id.clone(),
-                        track: track_data,
-                        reason: protocol::TrackEndReason::Cleanup,
-                    }),
-                };
-                session.send_message(&end_event);
+            if player.track.is_some() {
+                player.track_info.clone()
+            } else {
+                None
             }
+        };
+
+        if let Some(track_data) = track_info {
+            let end_event = protocol::OutgoingMessage::Event {
+                event: Box::new(protocol::RustalinkEvent::TrackEnd {
+                    guild_id: guild_id.clone(),
+                    track: track_data,
+                    reason: protocol::TrackEndReason::Cleanup,
+                }),
+            };
+            session.send_message(&end_event);
         }
 
         session.destroy_player(&guild_id).await;

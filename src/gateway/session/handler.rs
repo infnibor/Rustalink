@@ -104,6 +104,9 @@ impl<'a> SessionState<'a> {
     pub fn attempt(&self) -> u32 {
         self.backoff.attempt()
     }
+    pub fn has_heartbeat(&self) -> bool {
+        self.heartbeat_handle.is_some()
+    }
 
     pub async fn handle_text(&mut self, text: String) -> Option<SessionOutcome> {
         let payload: GatewayPayload = match serde_json::from_str(&text) {
@@ -261,10 +264,27 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_ready(&mut self, d: Value) -> Option<SessionOutcome> {
-        self.ssrc = d["ssrc"].as_u64().unwrap_or(0) as u32;
-        let ip = d["ip"].as_str().unwrap_or("");
-        let port = d["port"].as_u64().unwrap_or(0) as u16;
-        self.udp_addr = Some(format!("{ip}:{port}").parse().ok()?);
+        let ssrc = d["ssrc"].as_u64();
+        let ip = d["ip"].as_str();
+        let port = d["port"].as_u64();
+
+        match (ssrc, ip, port) {
+            (Some(ssrc), Some(ip), Some(port)) if port <= 65535 => {
+                self.ssrc = ssrc as u32;
+                let addr_str = format!("{ip}:{port}");
+                match addr_str.parse::<SocketAddr>() {
+                    Ok(addr) => self.udp_addr = Some(addr),
+                    Err(_) => {
+                        error!("[{}] Invalid READY address: {addr_str}", self.gateway.guild_id);
+                        return Some(SessionOutcome::Reconnect);
+                    }
+                }
+            }
+            _ => {
+                error!("[{}] Malformed READY payload", self.gateway.guild_id);
+                return Some(SessionOutcome::Reconnect);
+            }
+        }
 
         if let Some(modes) = d["modes"].as_array() {
             let pref = ["aead_aes256_gcm_rtpsize", "xsalsa20_poly1305"];
@@ -302,7 +322,12 @@ impl<'a> SessionState<'a> {
             }
         }
 
-        match discover_ip(&self.udp_socket, self.udp_addr?, self.ssrc).await {
+        let target_addr = match self.udp_addr {
+            Some(a) => a,
+            None => return Some(SessionOutcome::Reconnect),
+        };
+
+        match discover_ip(&self.udp_socket, target_addr, self.ssrc).await {
             Ok((my_ip, my_port)) => {
                 self.send_json(OpCode::SelectProtocol as u8, serde_json::json!({
                     "protocol": "udp",
@@ -334,14 +359,31 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_session_description(&mut self, d: Value) -> Option<SessionOutcome> {
-        let ka = d["secret_key"].as_array()?;
+        let ka = match d["secret_key"].as_array() {
+            Some(a) if a.len() == 32 => a,
+            _ => {
+                error!("[{}] Invalid or missing secret_key in VOICE_READY", self.gateway.guild_id);
+                return Some(SessionOutcome::Reconnect);
+            }
+        };
+
         let mut key = [0u8; 32];
-        for (i, v) in ka.iter().enumerate().take(32) {
-            key[i] = v.as_u64()? as u8;
+        for (i, v) in ka.iter().enumerate() {
+            if let Some(val) = v.as_u64() {
+                if val <= 255 {
+                    key[i] = val as u8;
+                    continue;
+                }
+            }
+            error!("[{}] Invalid secret_key byte at index {i}", self.gateway.guild_id);
+            return Some(SessionOutcome::Reconnect);
         }
 
         self.session_key = Some(key);
-        let addr = self.udp_addr?;
+        let addr = match self.udp_addr {
+            Some(a) => a,
+            None => return Some(SessionOutcome::Reconnect),
+        };
 
         {
             let mut state = self.persistent_state.lock().await;
@@ -530,8 +572,13 @@ impl<'a> SessionState<'a> {
             persistent_state: self.persistent_state.clone(),
         };
 
+        let guild_id = self.gateway.guild_id.clone();
+        let conn_token = self.conn_token.clone();
         self.speak_task = Some(tokio::spawn(async move {
-            let _ = speak_loop(config).await;
+            if let Err(e) = speak_loop(config).await {
+                error!("[{guild_id}] speak_loop failed: {e}");
+                conn_token.cancel();
+            }
         }));
 
         self.send_json(

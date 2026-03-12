@@ -31,6 +31,9 @@ fn setup_rerun_triggers() {
     if Path::new(".git/refs/heads").exists() {
         println!("cargo:rerun-if-changed=.git/refs/heads");
     }
+    if Path::new(".git/packed-refs").exists() {
+        println!("cargo:rerun-if-changed=.git/packed-refs");
+    }
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
     println!("cargo:rerun-if-env-changed=GITHUB_REF_NAME");
     println!("cargo:rerun-if-env-changed=GITHUB_REF");
@@ -144,11 +147,15 @@ fn detect_pre_release() -> Option<String> {
     // Priority 1: GITHUB_REF_NAME (tag or branch)
     if let Ok(v) = env::var("GITHUB_REF_NAME") {
         if let Some(idx) = v.find('-') {
-            return Some(v[idx + 1..].to_string());
+            if let Some(sanitized) = sanitize_pre_release(&v[idx + 1..]) {
+                return Some(sanitized);
+            }
         }
         // Use non-main branches as pre-release identifiers
         if !is_main_branch(&v) && !v.starts_with('v') {
-            return Some(v);
+            if let Some(sanitized) = sanitize_pre_release(&v) {
+                return Some(sanitized);
+            }
         }
     }
 
@@ -156,7 +163,9 @@ fn detect_pre_release() -> Option<String> {
     if let Ok(v) = env::var("GITHUB_REF")
         && let Some(idx) = v.rfind('-')
     {
-        return Some(v[idx + 1..].to_string());
+        if let Some(sanitized) = sanitize_pre_release(&v[idx + 1..]) {
+            return Some(sanitized);
+        }
     }
 
     // Priority 3: Git describe
@@ -168,10 +177,14 @@ fn detect_pre_release() -> Option<String> {
         if let Some(next_dash) = part.find('-') {
             let pre = &part[..next_dash];
             if !is_numeric(pre) {
-                return Some(pre.to_string());
+                if let Some(sanitized) = sanitize_pre_release(pre) {
+                    return Some(sanitized);
+                }
             }
         } else if !is_numeric(part) {
-            return Some(part.to_string());
+            if let Some(sanitized) = sanitize_pre_release(part) {
+                return Some(sanitized);
+            }
         }
     }
 
@@ -181,10 +194,40 @@ fn detect_pre_release() -> Option<String> {
         && branch != "HEAD"
         && !branch.is_empty()
     {
-        return Some(branch);
+        if let Some(sanitized) = sanitize_pre_release(&branch) {
+            return Some(sanitized);
+        }
     }
 
     None
+}
+
+fn sanitize_pre_release(s: &str) -> Option<String> {
+    let mut result = String::with_capacity(s.len());
+    let mut last_was_dash = false;
+
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() || c == '.' {
+            result.push(c);
+            last_was_dash = false;
+        } else if c == '/' || c == '-' || c == '_' || c.is_whitespace() {
+            if !last_was_dash && !result.is_empty() {
+                result.push('-');
+                last_was_dash = true;
+            }
+        }
+    }
+
+    if result.ends_with('-') {
+        result.pop();
+    }
+
+    let final_s = result.chars().take(40).collect::<String>();
+    if final_s.is_empty() || is_numeric(&final_s) {
+        None
+    } else {
+        Some(final_s)
+    }
 }
 
 fn is_main_branch(name: &str) -> bool {

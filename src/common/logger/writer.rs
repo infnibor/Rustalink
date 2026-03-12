@@ -130,6 +130,7 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CircularFileWriter {
 mod tests {
     use super::*;
     use std::fs;
+    use tracing_subscriber::fmt::MakeWriter;
 
     fn cleanup_test_file(path: &str) {
         let _ = fs::remove_file(path);
@@ -285,15 +286,15 @@ mod tests {
 
     #[test]
     fn test_prune_threshold_calculation() {
-        let writer = CircularFileWriter::new("test.log".to_string(), 1000);
+        let _writer = CircularFileWriter::new("test.log".to_string(), 1000);
         let threshold = (1000 / 10).max(50);
         assert_eq!(threshold, 100);
 
-        let writer = CircularFileWriter::new("test.log".to_string(), 100);
+        let _writer = CircularFileWriter::new("test.log".to_string(), 100);
         let threshold = (100 / 10).max(50);
         assert_eq!(threshold, 50);
 
-        let writer = CircularFileWriter::new("test.log".to_string(), 10);
+        let _writer = CircularFileWriter::new("test.log".to_string(), 10);
         let threshold = (10 / 10).max(50);
         assert_eq!(threshold, 50);
 

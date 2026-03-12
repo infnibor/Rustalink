@@ -40,8 +40,10 @@ impl LiveHlsReader {
         local_addr: Option<IpAddr>,
         proxy: Option<HttpProxyConfig>,
         handle: tokio::runtime::Handle,
+        err_tx: flume::Sender<String>,
     ) -> Self {
         let (chunk_tx, chunk_rx) = flume::bounded::<Vec<u8>>(16);
+        let err_tx_clone = err_tx;
 
         tokio::task::spawn_blocking(move || {
             let _guard = handle.enter();
@@ -55,12 +57,20 @@ impl LiveHlsReader {
 
             if let Some(ref cfg) = proxy
                 && let Some(ref url) = cfg.url
-                && let Ok(mut p) = reqwest::Proxy::all(url)
             {
-                if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
-                    p = p.basic_auth(u, pw);
+                match reqwest::Proxy::all(url) {
+                    Ok(mut p) => {
+                        if let (Some(u), Some(pw)) = (&cfg.username, &cfg.password) {
+                            p = p.basic_auth(u, pw);
+                        }
+                        builder = builder.proxy(p);
+                    }
+                    Err(e) => {
+                        tracing::error!("Twitch live HLS: proxy setup failed for {url}: {e}");
+                        let _ = err_tx_clone.send(format!("Proxy setup failed: {e}"));
+                        return;
+                    }
                 }
-                builder = builder.proxy(p);
             }
 
             let client = match builder.build() {
@@ -72,6 +82,7 @@ impl LiveHlsReader {
             };
 
             let mut seen: HashSet<String> = HashSet::new();
+            let mut seen_history: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(50);
 
             loop {
                 let text = match handle.block_on(fetch_text(&client, &manifest_url)) {
@@ -84,9 +95,13 @@ impl LiveHlsReader {
                 };
 
                 let (segments, target_duration) =
-                    parse_live_playlist(&text, &manifest_url, &mut seen);
+                    parse_live_playlist(&text, &manifest_url);
 
                 for seg in segments {
+                    if seen.contains(&seg.url) {
+                        continue;
+                    }
+
                     let mut raw = Vec::new();
                     if let Err(e) = handle.block_on(fetch_segment_into(&client, &seg, &mut raw)) {
                         tracing::warn!("Twitch: segment fetch error: {e}");
@@ -95,13 +110,27 @@ impl LiveHlsReader {
 
                     let payload = if raw.first() == Some(&0x47) {
                         let adts = extract_adts_from_ts(&raw);
-                        if adts.is_empty() { raw } else { adts }
+                        if adts.is_empty() {
+                            tracing::debug!("Twitch: ADTS extraction failed, skipping segment");
+                            continue;
+                        }
+                        adts
                     } else {
                         raw
                     };
 
                     if chunk_tx.send(payload).is_err() {
                         return;
+                    }
+
+                    // Mark as seen only after successful fetch and send
+                    if seen.insert(seg.url.clone()) {
+                        seen_history.push_back(seg.url);
+                        if seen_history.len() > 50 {
+                            if let Some(old) = seen_history.pop_front() {
+                                seen.remove(&old);
+                            }
+                        }
                     }
                 }
 
@@ -121,7 +150,6 @@ impl LiveHlsReader {
 fn parse_live_playlist(
     text: &str,
     base_url: &str,
-    seen: &mut HashSet<String>,
 ) -> (Vec<Resource>, f64) {
     let mut segments = Vec::new();
     let mut target_duration = 6.0f64;
@@ -147,13 +175,11 @@ fn parse_live_playlist(
             }
             if j < lines.len() && !lines[j].is_empty() {
                 let url = resolve_url(base_url, lines[j]);
-                if seen.insert(url.clone()) {
-                    segments.push(Resource {
-                        url,
-                        range: None,
-                        duration,
-                    });
-                }
+                segments.push(Resource {
+                    url,
+                    range: None,
+                    duration,
+                });
             }
             i = j + 1;
             continue;
@@ -228,6 +254,7 @@ impl PlayableTrack for TwitchTrack {
                 local_addr,
                 proxy,
                 handle.clone(),
+                err_tx.clone(),
             )) as Box<dyn MediaSource>;
 
             match AudioProcessor::new(
