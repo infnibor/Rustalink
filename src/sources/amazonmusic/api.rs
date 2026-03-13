@@ -17,10 +17,7 @@ use serde_json::{Value, json};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-use super::{
-    region::DomainConfigCache,
-    validators::{is_invalid_album, is_invalid_playlist},
-};
+use super::validators::{is_invalid_album, is_invalid_playlist};
 
 const CONFIG_URL: &str = "https://music.amazon.com/config.json";
 const API_BASE: &str = "https://eu.mesk.skill.music.a2z.com/api";
@@ -37,7 +34,6 @@ const USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 
 pub struct AmazonMusicClient {
     http: Arc<reqwest::Client>,
     cached_config: RwLock<Option<Value>>,
-    domain_configs: Arc<DomainConfigCache>,
 }
 
 impl AmazonMusicClient {
@@ -45,7 +41,6 @@ impl AmazonMusicClient {
         Self {
             http,
             cached_config: RwLock::new(None),
-            domain_configs: Arc::new(DomainConfigCache::new()),
         }
     }
 
@@ -281,6 +276,7 @@ impl AmazonMusicClient {
         id: &str,
         domain_hint: Option<&str>,
     ) -> Option<Value> {
+        let config = self.site_config().await?;
         super::region::fetch_multi_region(
             &self.http,
             id,
@@ -289,7 +285,7 @@ impl AmazonMusicClient {
             "Album",
             domain_hint,
             is_invalid_album,
-            &self.domain_configs,
+            &config,
         )
         .await
     }
@@ -299,6 +295,7 @@ impl AmazonMusicClient {
         id: &str,
         domain_hint: Option<&str>,
     ) -> Option<Value> {
+        let config = self.site_config().await?;
         super::region::fetch_multi_region(
             &self.http,
             id,
@@ -307,7 +304,7 @@ impl AmazonMusicClient {
             "Playlist",
             domain_hint,
             is_invalid_playlist,
-            &self.domain_configs,
+            &config,
         )
         .await
     }

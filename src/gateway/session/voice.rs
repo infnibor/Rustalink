@@ -158,14 +158,31 @@ impl VoiceSession {
         opus: &mut [u8],
         ts_pcm: &mut [i16],
     ) -> Result<(), GatewayError> {
+        macro_rules! try_lock_yield {
+            ($mutex:expr) => {{
+                let mut guard = None;
+                for _ in 0..10 {
+                    if let Ok(g) = $mutex.try_lock() {
+                        guard = Some(g);
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                guard
+            }};
+        }
+
         let mut loop_count = 0;
 
         while loop_count < 10 {
             loop_count += 1;
 
             let ready_from_ts = {
-                let mut filters = self.config.filter_chain.lock().await;
-                filters.has_timescale() && filters.fill_frame(ts_pcm)
+                if let Some(mut filters) = try_lock_yield!(self.config.filter_chain) {
+                    filters.has_timescale() && filters.fill_frame(ts_pcm)
+                } else {
+                    false
+                }
             };
 
             if ready_from_ts {
@@ -178,10 +195,18 @@ impl VoiceSession {
                 return self.send_pcm(encoder, ts_pcm, opus).await;
             }
 
-            let mut mixer = self.config.mixer.lock().await;
+            let mut has_input = false;
+            let mut opus_data = None;
 
-            if let Some(data) = mixer.take_opus_frame() {
-                drop(mixer);
+            if let Some(mut mixer) = try_lock_yield!(self.config.mixer) {
+                if let Some(data) = mixer.take_opus_frame() {
+                    opus_data = Some(data);
+                } else {
+                    has_input = mixer.mix(pcm);
+                }
+            }
+
+            if let Some(data) = opus_data {
                 self.reset_timers();
                 self.set_speaking(true);
                 self.config.frames_sent.fetch_add(1, Ordering::Relaxed);
@@ -191,9 +216,6 @@ impl VoiceSession {
                 }
                 return self.send_raw(&data).await;
             }
-
-            let has_input = mixer.mix(pcm);
-            drop(mixer);
 
             if has_input {
                 self.reset_timers();
@@ -211,9 +233,12 @@ impl VoiceSession {
             }
 
             let has_ts = {
-                let mut filters = self.config.filter_chain.lock().await;
-                filters.process(pcm);
-                filters.has_timescale()
+                if let Some(mut filters) = try_lock_yield!(self.config.filter_chain) {
+                    filters.process(pcm);
+                    filters.has_timescale()
+                } else {
+                    false
+                }
             };
 
             if !has_ts {
@@ -231,8 +256,11 @@ impl VoiceSession {
             }
 
             let filled_on_silence = {
-                let mut filters = self.config.filter_chain.lock().await;
-                !has_input && filters.fill_frame(ts_pcm)
+                if let Some(mut filters) = try_lock_yield!(self.config.filter_chain) {
+                    !has_input && filters.fill_frame(ts_pcm)
+                } else {
+                    false
+                }
             };
 
             if !has_input && !filled_on_silence {
