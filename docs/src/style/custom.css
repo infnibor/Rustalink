@@ -6,6 +6,7 @@
 
 	/* Starlight accent colors */
 	--sl-color-accent-low: #3a1a0b;
+	--sl-color-accent-low-rgb: 58, 26, 11;
 	--sl-color-accent: var(--brand-orange);
 	--sl-color-accent-high: var(--brand-orange-light);
 
@@ -16,6 +17,7 @@
 /* Dark mode overrides (optional, but good for premium feel) */
 :root[data-theme='dark'] {
 	--sl-color-accent-low: #4a1f0a;
+	--sl-color-accent-low-rgb: 74, 31, 10;
 	--sl-color-accent: #ff5100;
 	--sl-color-accent-high: #f46420;
 }
