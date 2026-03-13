@@ -158,13 +158,27 @@ impl VoiceSession {
         opus: &mut [u8],
         ts_pcm: &mut [i16],
     ) -> Result<(), GatewayError> {
+        macro_rules! try_lock_yield {
+            ($mutex:expr) => {{
+                let mut guard = None;
+                for _ in 0..10 {
+                    if let Ok(g) = $mutex.try_lock() {
+                        guard = Some(g);
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                guard
+            }};
+        }
+
         let mut loop_count = 0;
 
         while loop_count < 10 {
             loop_count += 1;
 
             let ready_from_ts = {
-                if let Ok(mut filters) = self.config.filter_chain.try_lock() {
+                if let Some(mut filters) = try_lock_yield!(self.config.filter_chain) {
                     filters.has_timescale() && filters.fill_frame(ts_pcm)
                 } else {
                     false
@@ -184,7 +198,7 @@ impl VoiceSession {
             let mut has_input = false;
             let mut opus_data = None;
 
-            if let Ok(mut mixer) = self.config.mixer.try_lock() {
+            if let Some(mut mixer) = try_lock_yield!(self.config.mixer) {
                 if let Some(data) = mixer.take_opus_frame() {
                     opus_data = Some(data);
                 } else {
@@ -219,7 +233,7 @@ impl VoiceSession {
             }
 
             let has_ts = {
-                if let Ok(mut filters) = self.config.filter_chain.try_lock() {
+                if let Some(mut filters) = try_lock_yield!(self.config.filter_chain) {
                     filters.process(pcm);
                     filters.has_timescale()
                 } else {
@@ -242,7 +256,7 @@ impl VoiceSession {
             }
 
             let filled_on_silence = {
-                if let Ok(mut filters) = self.config.filter_chain.try_lock() {
+                if let Some(mut filters) = try_lock_yield!(self.config.filter_chain) {
                     !has_input && filters.fill_frame(ts_pcm)
                 } else {
                     false
