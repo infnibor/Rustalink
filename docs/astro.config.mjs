@@ -7,6 +7,9 @@ import mermaid from 'astro-mermaid';
 // https://astro.build/config
 export default defineConfig({
   base: '/Rustalink/',
+  redirects: {
+    '/': '/Rustalink/introduction/',
+  },
   integrations: [
     starlight({
       title: 'Rustalink',
@@ -27,7 +30,6 @@ export default defineConfig({
           label: 'Getting Started',
           items: [
             { label: 'Introduction', slug: 'introduction' },
-            { label: 'Installation', slug: 'index' },
             { label: 'Configuration', slug: 'configuration' },
             { label: 'Docker', slug: 'docker' },
             { label: 'Pterodactyl', slug: 'pterodactyl' },
