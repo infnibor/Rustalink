@@ -150,11 +150,7 @@ async fn check_stuck(
     cur_pos: u64,
     last_pos_changed_at: std::time::Instant,
 ) -> bool {
-    let effective_threshold = if cur_pos == 0 {
-        ctx.stuck_threshold_ms.max(30_000)
-    } else {
-        ctx.stuck_threshold_ms
-    };
+    let effective_threshold = ctx.stuck_threshold_ms;
 
     let elapsed_ms = last_pos_changed_at.elapsed().as_millis() as u64;
     if elapsed_ms >= effective_threshold {
