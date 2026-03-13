@@ -11,21 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
+
 use std::{
-    collections::HashMap,
     sync::LazyLock,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use futures::{StreamExt, stream::FuturesUnordered};
 use regex::Regex;
 use serde_json::{Value, json};
-use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use super::api::gen_request_id;
-
-const CONFIG_TTL: Duration = Duration::from_secs(5 * 60);
 
 const USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 \
     (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
@@ -211,71 +209,6 @@ pub fn extract_domain(url: &str) -> Option<String> {
     }
 }
 
-pub struct DomainConfigCache {
-    inner: RwLock<HashMap<String, (Value, Instant)>>,
-}
-
-impl Default for DomainConfigCache {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DomainConfigCache {
-    pub fn new() -> Self {
-        Self {
-            inner: RwLock::new(HashMap::new()),
-        }
-    }
-
-    async fn get(&self, domain: &str) -> Option<Value> {
-        let guard = self.inner.read().await;
-        if let Some((val, ts)) = guard.get(domain)
-            && ts.elapsed() < CONFIG_TTL
-        {
-            return Some(val.clone());
-        }
-        None
-    }
-
-    async fn set(&self, domain: &str, val: Value) {
-        self.inner
-            .write()
-            .await
-            .insert(domain.to_string(), (val, Instant::now()));
-    }
-}
-
-async fn fetch_domain_config(
-    http: &reqwest::Client,
-    domain: &str,
-    cache: &DomainConfigCache,
-) -> Option<Value> {
-    if let Some(cached) = cache.get(domain).await {
-        return Some(cached);
-    }
-
-    let url = format!("https://{domain}/config.json");
-    let resp = http
-        .get(&url)
-        .header("accept", "*/*")
-        .header("accept-language", "en-US,en;q=0.9")
-        .header("user-agent", USER_AGENT)
-        .header("referer", format!("https://{domain}/"))
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await
-        .ok()?;
-
-    if !resp.status().is_success() {
-        return None;
-    }
-
-    let config: Value = resp.json().await.ok()?;
-    cache.set(domain, config.clone()).await;
-    Some(config)
-}
-
 fn build_region_headers(
     config: &Value,
     region: &RegionConfig,
@@ -348,15 +281,13 @@ async fn fetch_from_endpoint(
     url_path_segment: &str,
     region: &RegionConfig,
     domain: &str,
-    cache: &DomainConfigCache,
+    base_config: &Value,
 ) -> Option<Value> {
-    let domain_config = fetch_domain_config(http, domain, cache).await?;
-
     let page_url = format!(
         "https://{domain}/{url_path_segment}/{}",
         urlencoding::encode(id)
     );
-    let inner_headers = build_region_headers(&domain_config, region, domain, &page_url);
+    let inner_headers = build_region_headers(base_config, region, domain, &page_url);
 
     let body = json!({
         "id": id,
@@ -411,7 +342,7 @@ pub async fn fetch_multi_region(
     entity_name: &str,
     domain_hint: Option<&str>,
     is_error: fn(&Value) -> bool,
-    cache: &DomainConfigCache,
+    base_config: &Value,
 ) -> Option<Value> {
     let mut tried_endpoint: Option<&str> = None;
 
@@ -421,7 +352,7 @@ pub async fn fetch_multi_region(
         debug!("Amazon Music: trying {entity_name} on hinted domain '{hint}'");
         tried_endpoint = Some(region.skill_endpoint);
         if let Some(data) =
-            fetch_from_endpoint(http, id, api_path, url_path_segment, region, hint, cache).await
+            fetch_from_endpoint(http, id, api_path, url_path_segment, region, hint, base_config).await
             && !is_error(&data)
         {
             debug!("Amazon Music: {entity_name} resolved via hinted domain '{hint}'");
@@ -442,9 +373,11 @@ pub async fn fetch_multi_region(
         if tried_endpoint == Some(region.skill_endpoint) {
             continue;
         }
+        // Clone base config reference for the async move block
+        let base_config = base_config.clone();
         futs.push(async move {
             let result =
-                fetch_from_endpoint(http, id, api_path, url_path_segment, region, domain, cache)
+                fetch_from_endpoint(http, id, api_path, url_path_segment, region, domain, &base_config)
                     .await;
             result.map(|data| (data, label))
         });
