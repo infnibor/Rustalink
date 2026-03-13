@@ -20,7 +20,8 @@ export default defineConfig({
         src: './src/assets/rastalink.svg',
       },
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/bongodevs/Rustalink' }
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/bongodevs/Rustalink' },
+        { icon: 'discord', label: 'Discord', href: 'https://discord.gg/vzjqrUpWxJ' }
       ],
       editLink: {
         baseUrl: 'https://github.com/bongodevs/Rustalink/edit/main/docs/',
