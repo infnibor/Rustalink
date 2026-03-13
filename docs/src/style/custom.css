@@ -30,8 +30,11 @@
 }
 
 /* Premium card hover effect */
+.card {
+	transition: transform 0.3s ease;
+}
+
 .card:hover {
 	transform: translateY(-4px);
-	transition: transform 0.3s ease;
 	border-color: var(--sl-color-accent);
 }
