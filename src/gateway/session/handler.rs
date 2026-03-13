@@ -451,6 +451,12 @@ impl<'a> SessionState<'a> {
                     self.selected_mode = m;
                 }
 
+                if let Some(task) = &self.speak_task
+                    && task.is_finished()
+                {
+                    self.speak_task = None;
+                }
+
                 if self.speak_task.is_some() {
                     debug!(
                         "[{}] Keeping existing voice loop alive across resume",
@@ -458,7 +464,7 @@ impl<'a> SessionState<'a> {
                     );
                 } else {
                     debug!(
-                        "[{}] Starting voice loop after resume",
+                        "[{}] Starting voice loop after resume (task was dead or missing)",
                         self.gateway.guild_id
                     );
                     self.start_voice(addr, key).await;
