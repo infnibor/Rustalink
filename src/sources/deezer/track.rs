@@ -112,35 +112,32 @@ impl PlayableTrack for DeezerTrack {
                         }
                     };
 
-                    // If main track has no RIGHTS, use FALLBACK track if available
                     let rights = results.get("RIGHTS");
                     let mut effective_track_id = track_id.clone();
-                    if (rights.is_none()
-                        || rights
-                            .and_then(|v| v.as_array())
-                            .map(|a| a.is_empty())
-                            .unwrap_or(
-                                rights
-                                    .and_then(|v| v.as_object())
-                                    .map(|o| o.is_empty())
-                                    .unwrap_or(true),
-                            ))
+                    if is_rights_empty(rights)
                         && let Some(fallback) = results.get("FALLBACK")
                         && !fallback.get("TRACK_TOKEN").map(|v| v.is_null()).unwrap_or(true)
                     {
-                        if let Some(fallback_id) = fallback.get("SNG_ID").and_then(|v| v.as_str()) {
-                            effective_track_id = fallback_id.to_owned();
-                        } else if let Some(fallback_id) =
-                            fallback.get("SNG_ID").and_then(|v| v.as_i64())
-                        {
-                            effective_track_id = fallback_id.to_string();
-                        }
+                        let fallback_id = fallback.get("SNG_ID").and_then(|v| {
+                            v.as_str()
+                                .map(|s| s.to_owned())
+                                .or_else(|| v.as_i64().map(|n| n.to_string()))
+                        });
 
-                        debug!(
-                            "DeezerTrack: Track {} has no RIGHTS, using FALLBACK {}",
-                            track_id, effective_track_id
-                        );
-                        results = fallback.clone();
+                        if let Some(id) = fallback_id {
+                            debug!(
+                                "DeezerTrack: Track {} has no RIGHTS, using FALLBACK {}",
+                                track_id, id
+                            );
+                            effective_track_id = id;
+                            results = fallback.clone();
+                        } else {
+                            tracing::warn!(
+                                "DeezerTrack: Track {} has no RIGHTS, but FALLBACK object has unexpected SNG_ID format: {:?}",
+                                track_id,
+                                fallback.get("SNG_ID")
+                            );
+                        }
                     }
 
                     let track_token = match results.get("TRACK_TOKEN").and_then(|v| v.as_str()) {
@@ -373,20 +370,19 @@ pub(super) async fn verify_track_resolvable(
 
     // If main track has no RIGHTS, use FALLBACK track if available
     let rights = results.get("RIGHTS");
-    if (rights.is_none()
-        || rights
-            .and_then(|v| v.as_array())
-            .map(|a| a.is_empty())
-            .unwrap_or(
-                rights
-                    .and_then(|v| v.as_object())
-                    .map(|o| o.is_empty())
-                    .unwrap_or(true),
-            ))
+    if is_rights_empty(rights)
         && let Some(fallback) = results.get("FALLBACK")
         && !fallback.get("TRACK_TOKEN").map(|v| v.is_null()).unwrap_or(true)
     {
-        results = fallback.clone();
+        let fallback_id = fallback.get("SNG_ID").and_then(|v| {
+            v.as_str()
+                .map(|s| s.to_owned())
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        });
+
+        if fallback_id.is_some() {
+            results = fallback.clone();
+        }
     }
 
     let track_token = results
@@ -436,4 +432,15 @@ pub(super) async fn verify_track_resolvable(
         .and_then(|s| s.get("url"))
         .and_then(|u| u.as_str())
         .map(|s| s.to_owned())
+}
+
+fn is_rights_empty(rights: Option<&serde_json::Value>) -> bool {
+    rights
+        .map(|v| {
+            v.as_array()
+                .map(|a| a.is_empty())
+                .or_else(|| v.as_object().map(|o| o.is_empty()))
+                .unwrap_or(true)
+        })
+        .unwrap_or(true)
 }

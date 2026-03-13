@@ -69,7 +69,7 @@ impl DeezerSource {
             let mut hasher = Sha256::new();
             hasher.update(key.as_bytes());
             if hasher.finalize().as_slice() != DECRYPTION_KEY_HASH {
-                tracing::warn!("Deezer master decryption key is possibly invalid, playback may not work!");
+                tracing::warn!("Deezer master decryption key is invalid, playback may not work!");
             }
         }
 
