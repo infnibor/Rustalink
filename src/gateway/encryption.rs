@@ -4,7 +4,7 @@ use std::{
 };
 
 use davey::{DaveSession, ProposalsOperationType};
-use tracing::{debug, info, warn};
+use tracing::{debug, trace, warn};
 
 use crate::{
     common::types::{AnyError, AnyResult, ChannelId, UserId},
@@ -156,7 +156,7 @@ impl DaveHandler {
     pub fn execute_transition(&mut self, transition_id: u16) {
         if let Some(next_version) = self.pending_transitions.remove(&transition_id) {
             self.protocol_version = next_version;
-            debug!(
+            trace!(
                 "DAVE transition {} executed (v{})",
                 transition_id, next_version
             );
@@ -320,7 +320,7 @@ impl DaveHandler {
 
             if is_ready != self.was_ready {
                 if is_ready {
-                    info!("DAVE session (v{}) is READY", self.protocol_version);
+                    debug!("DAVE session (v{}) is READY", self.protocol_version);
                 } else {
                     warn!("DAVE session (v{}) LOST readiness", self.protocol_version);
                 }

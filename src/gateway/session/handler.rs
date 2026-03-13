@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, trace, warn};
 use uuid::Uuid;
 
 use super::{
@@ -136,7 +136,7 @@ impl<'a> SessionState<'a> {
             OpCode::ClientConnect => self.on_user_connect(payload.d).await,
             OpCode::ClientDisconnect => self.on_user_disconnect(payload.d).await,
             OpCode::VoiceBackendVersion => {
-                info!(
+                debug!(
                     "[{}] Voice Backend Version: {:?}",
                     self.gateway.guild_id, payload.d
                 );
@@ -430,7 +430,7 @@ impl<'a> SessionState<'a> {
     }
 
     async fn on_resumed(&mut self) -> Option<SessionOutcome> {
-        info!("[{}] Resumed", self.gateway.guild_id);
+        debug!("[{}] Resumed", self.gateway.guild_id);
         self.backoff.reset();
 
         let (addr, key, ssrc, mode) = {
@@ -453,14 +453,7 @@ impl<'a> SessionState<'a> {
                 }
 
                 self.start_voice(addr, key).await;
-                self.send_json(
-                    OpCode::Video as u8,
-                    serde_json::json!({"audio_ssrc": self.ssrc, "video_ssrc": 0, "rtx_ssrc": 0}),
-                );
-                self.send_json(
-                    OpCode::Speaking as u8,
-                    serde_json::json!({"speaking": 0, "delay": 0, "ssrc": self.ssrc}),
-                );
+                
             }
             _ => {
                 warn!(
