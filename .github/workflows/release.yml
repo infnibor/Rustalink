@@ -8,7 +8,7 @@ on:
       run_all:
         description: 'Run all jobs'
         type: boolean
-        default: true
+        default: false
       run_linux:
         description: 'Run Linux builds'
         type: boolean
@@ -252,7 +252,7 @@ jobs:
 
   # Publish GitHub Release Assets
   publish:
-    if: github.event_name == 'release' || inputs.run_all || inputs.run_publish
+    if: github.event_name == 'release'
     name: 📦 Publish Release Assets
     needs: [build-linux, build-other]
     runs-on: ubuntu-latest
@@ -275,7 +275,7 @@ jobs:
 
   # Send Discord Notification
   notify:
-    if: always() && (github.event_name == 'release' || inputs.run_all || inputs.run_notify)
+    if: always() && github.event_name == 'release'
     name: 🔔 Discord Notification
     needs: [docker, publish]
     runs-on: ubuntu-latest
