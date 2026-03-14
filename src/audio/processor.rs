@@ -276,6 +276,7 @@ impl AudioProcessor {
                 }
                 Err(Error::ResetRequired) => {
                     self.decoder.reset();
+                    self.resampler.reset();
                     self.sample_buf = None;
                     warn!("Decoder reset required — resetting state and continuing");
                 }
