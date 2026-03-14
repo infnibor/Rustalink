@@ -71,7 +71,7 @@ impl PlayableTrack for DeezerTrack {
                 let cdn_url = resolved.cdn_url.clone();
                 let effective_id = resolved.track_id.clone();
 
-                let reader_result = tokio::task::spawn_blocking(move || {
+                let reader_result = match tokio::task::spawn_blocking(move || {
                     DeezerReader::new(
                         &cdn_url,
                         &effective_id,
@@ -88,7 +88,14 @@ impl PlayableTrack for DeezerTrack {
                     .map_err(|e| e.to_string())
                 })
                 .await
-                .expect("spawn_blocking panicked");
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        warn!("Deezer: reader spawn_blocking failed for {track_id}: {e}");
+                        attempt += 1;
+                        continue;
+                    }
+                };
 
                 let (reader, final_url) = match reader_result {
                     Ok(v) => v,
@@ -106,11 +113,18 @@ impl PlayableTrack for DeezerTrack {
 
                 let kind = crate::common::types::AudioFormat::from_url(&final_url);
                 let err_tx_setup = err_tx.clone();
-                let setup = tokio::task::spawn_blocking(move || {
+                let setup = match tokio::task::spawn_blocking(move || {
                     AudioProcessor::new(reader, Some(kind), tx, cmd_rx, Some(err_tx_setup), config)
                 })
                 .await
-                .expect("spawn_blocking panicked");
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("Deezer: processor spawn_blocking failed for {track_id}: {e}");
+                        let _ = err_tx.send(format!("Processor spawn failure: {e}"));
+                        break false;
+                    }
+                };
 
                 match setup {
                     Ok(mut processor) => {
