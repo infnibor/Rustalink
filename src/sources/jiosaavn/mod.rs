@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use regex::Regex;
 
 use self::track::JioSaavnTrack;
-use crate::{protocol::tracks::LoadResult, sources::plugin::PlayableTrack};
+use crate::{protocol::tracks::LoadResult, sources::playable_track::BoxedTrack};
 
 pub mod helpers;
 pub mod metadata;
@@ -165,7 +165,7 @@ impl crate::sources::plugin::SourcePlugin for JioSaavnSource {
         &self,
         identifier: &str,
         routeplanner: Option<Arc<dyn crate::routeplanner::RoutePlanner>>,
-    ) -> Option<Box<dyn PlayableTrack>> {
+    ) -> Option<BoxedTrack> {
         let id = if let Some(caps) = url_regex().captures(identifier) {
             caps.name("id").map(|m| m.as_str()).unwrap_or(identifier)
         } else {
@@ -187,7 +187,7 @@ impl crate::sources::plugin::SourcePlugin for JioSaavnSource {
 
         let local_addr = routeplanner.and_then(|rp| rp.get_address());
 
-        Some(Box::new(JioSaavnTrack {
+        Some(Arc::new(JioSaavnTrack {
             encrypted_url,
             secret_key: self.secret_key.clone(),
             is_320,

@@ -10,7 +10,7 @@ use crate::{
     common::types::SharedRw,
     config::sources::YouTubeConfig,
     protocol::tracks::*,
-    sources::{SourcePlugin, plugin::BoxedTrack},
+    sources::{SourcePlugin, playable_track::BoxedTrack},
 };
 
 pub mod cipher;
@@ -472,7 +472,7 @@ impl SourcePlugin for YouTubeSource {
         let clients_to_try = self.prioritize_clients(&self.playback_clients, is_music_url);
         let clients = clients_to_try.into_iter().cloned().collect();
 
-        Some(Box::new(track::YoutubeTrack {
+        Some(Arc::new(track::YoutubeTrack {
             identifier: id,
             clients,
             oauth: self.oauth.clone(),

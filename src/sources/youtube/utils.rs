@@ -4,7 +4,7 @@ use symphonia::core::io::MediaSource;
 
 use crate::{
     common::types::AudioFormat,
-    sources::youtube::{cipher::YouTubeCipherManager, hls::HlsReader, reader::YoutubeReader},
+    sources::{http::reader::HttpReader, youtube::{cipher::YouTubeCipherManager, hls::HlsReader, reader::YoutubeReader}},
 };
 
 pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36";

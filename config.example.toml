@@ -47,7 +47,9 @@ duration_tolerance_ms = 3000
 
 [logging]
 level = "info"              # trace | debug | info | warn | error | off
-filters = "rustalink=debug" # e.g. "rustalink=debug,davey=off"
+# Filter logs from specific modules. Use "module=level" separated by commas.
+# Example: "rustalink=debug,mpa=off" (to suppress MP3 decoder warnings)
+filters = "rustalink=info,mpa=off"
 
 [logging.file]
 path = "./logs/rustalink.log"

@@ -347,7 +347,7 @@ mod get_track_tests {
         let http = Arc::new(reqwest::Client::new());
         let cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
         let client = TvSimplyClient::new(http, cipher.clone());
-        let oauth = Arc::new(YouTubeOAuth::new(vec![]));
+        //let oauth = Arc::new(YouTubeOAuth::new(vec![]));
 
         let body = client
             .player_request("3Z_x7vBqr6E", None, None)
