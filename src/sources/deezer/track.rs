@@ -56,16 +56,12 @@ impl PlayableTrack for DeezerTrack {
             let cdn_url     = resolved.cdn_url.clone();
             let effective_id = resolved.track_id.clone();
 
-            let reader_result = tokio::task::spawn_blocking(move || {
-                DeezerReader::new(&cdn_url, &effective_id, &master_key, local_addr, proxy)
-                    .map(|r| (
-                        Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
-                        cdn_url,
-                    ))
-                    .map_err(|e| e.to_string())
-            })
-            .await
-            .map_err(|e| format!("spawn_blocking failed: {e}"))?;
+            let reader_result = DeezerReader::new(&cdn_url, &effective_id, &master_key, local_addr, proxy).await
+                .map(|r| (
+                    Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
+                    cdn_url,
+                ))
+                .map_err(|e| e.to_string());
 
             let (reader, final_url) = match reader_result {
                 Ok(v)  => v,

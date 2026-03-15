@@ -75,12 +75,7 @@ impl PlayableTrack for YoutubeTrack {
             let url_clone  = url.clone();
             let name_clone = name.clone();
 
-            match tokio::task::spawn_blocking(move || {
-                create_reader(&url_clone, &name_clone, local_addr, proxy, cipher)
-            })
-            .await
-            .map_err(|e| format!("spawn_blocking panicked: {e}"))?
-            {
+            match create_reader(&url_clone, &name_clone, local_addr, proxy, cipher).await {
                 Ok(reader) => return Ok(ResolvedTrack::new(reader, hint)),
                 Err(e) => {
                     warn!("YoutubeTrack: reader failed for '{name}': {e} — trying next client");

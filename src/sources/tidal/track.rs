@@ -41,13 +41,10 @@ impl PlayableTrack for TidalTrack {
         let stream_url   = self.stream_url.clone();
         let kind         = self.kind;
 
-        let reader = tokio::task::spawn_blocking(move || {
-            HttpSource::new(client_inner, &stream_url)
-                .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
-                .map_err(|e| format!("Failed to initialize source: {e}"))
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking failed: {e}"))??;
+        let reader = HttpSource::new(client_inner, &stream_url)
+            .await
+            .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
+            .map_err(|e| format!("Failed to initialize source: {e}"))?;
 
         Ok(ResolvedTrack::new(reader, Some(kind)))
     }

@@ -13,11 +13,11 @@ use symphonia::core::{
     meta::{MetadataOptions, StandardTagKey},
     probe::Hint,
 };
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 use crate::{
     common::types::AnyResult,
-    protocol::tracks::{LoadError, LoadResult, Track, TrackInfo},
+    protocol::tracks::{LoadResult, Track, TrackInfo},
     sources::{
         SourcePlugin,
         playable_track::PlayableTrack,
@@ -42,8 +42,8 @@ impl HttpSource {
         Self
     }
 
-    fn probe_metadata(url: String, local_addr: Option<std::net::IpAddr>) -> AnyResult<TrackInfo> {
-        let source = reader::HttpReader::new(&url, local_addr, None)?;
+    async fn probe_metadata(url: String, local_addr: Option<std::net::IpAddr>) -> AnyResult<TrackInfo> {
+        let source = reader::HttpReader::new(&url, local_addr, None).await?;
         let mut hint = Hint::new();
 
         if let Some(content_type) = source.content_type() {
@@ -151,26 +151,12 @@ impl SourcePlugin for HttpSource {
 
         let identifier = identifier.to_owned();
         let local_addr = routeplanner.as_ref().and_then(|rp| rp.get_address());
-        let identifier_clone = identifier.clone();
 
-        match tokio::task::spawn_blocking(move || {
-            HttpSource::probe_metadata(identifier_clone, local_addr)
-        })
-        .await
-        {
-            Ok(Ok(info)) => LoadResult::Track(Track::new(info)),
-            Ok(Err(e)) => {
-                warn!("Probing failed for {identifier}: {e}");
-                LoadResult::Empty {}
-            }
+        match HttpSource::probe_metadata(identifier, local_addr).await {
+            Ok(info) => LoadResult::Track(Track::new(info)),
             Err(e) => {
-                error!("Task join error: {e}");
-                LoadResult::Error(LoadError {
-                    message: Some("Internal error during probing".to_owned()),
-                    severity: crate::common::Severity::Suspicious,
-                    cause: e.to_string(),
-                    cause_stack_trace: None,
-                })
+                warn!("Probing failed: {e}");
+                LoadResult::Empty {}
             }
         }
     }

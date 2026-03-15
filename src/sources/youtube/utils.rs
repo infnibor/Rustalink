@@ -17,7 +17,7 @@ pub fn detect_audio_kind(url: &str, is_hls: bool) -> AudioFormat {
     }
 }
 
-pub fn create_reader(
+pub async fn create_reader(
     url: &str,
     client_name: &str,
     local_addr: Option<std::net::IpAddr>,
@@ -35,7 +35,7 @@ pub fn create_reader(
     } else if client_name == "TV" {
         Ok(Box::new(YoutubeReader::new(url, local_addr, proxy)?))
     } else {
-        Ok(Box::new(HttpReader::new(url, local_addr, proxy)?))
+        Ok(Box::new(HttpReader::new(url, local_addr, proxy).await?))
     }
 }
 type AnyResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

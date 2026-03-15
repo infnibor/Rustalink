@@ -29,32 +29,29 @@ impl PlayableTrack for GaanaTrack {
         let local_addr = self.local_addr;
         let proxy      = self.proxy.clone();
 
-        tokio::task::spawn_blocking(move || {
-            let is_hls = url.contains(".m3u8") || url.contains("/api/manifest/hls_");
+        let is_hls = url.contains(".m3u8") || url.contains("/api/manifest/hls_");
 
-            if is_hls {
-                crate::sources::youtube::hls::HlsReader::new(&url, local_addr, None, None, proxy)
-                    .map(|r| ResolvedTrack::new(
-                        Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
-                        Some(AudioFormat::Aac),
-                    ))
-                    .map_err(|e| format!("Failed to init HLS reader: {e}"))
-            } else {
-                let hint = std::path::Path::new(&url)
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(AudioFormat::from_ext);
+        if is_hls {
+            crate::sources::youtube::hls::HlsReader::new(&url, local_addr, None, None, proxy)
+                .map(|r| ResolvedTrack::new(
+                    Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
+                    Some(AudioFormat::Aac),
+                ))
+                .map_err(|e| format!("Failed to init HLS reader: {e}"))
+        } else {
+            let hint = std::path::Path::new(&url)
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(AudioFormat::from_ext);
 
-                super::reader::GaanaReader::new(&url, local_addr, proxy)
-                    .map(|r| ResolvedTrack::new(
-                        Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
-                        hint,
-                    ))
-                    .map_err(|e| format!("Failed to init reader: {e}"))
-            }
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking failed: {e}"))?
+            super::reader::GaanaReader::new(&url, local_addr, proxy)
+                .await
+                .map(|r| ResolvedTrack::new(
+                    Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
+                    hint,
+                ))
+                .map_err(|e| format!("Failed to init reader: {e}"))
+        }
     }
 }
 

@@ -34,39 +34,36 @@ impl PlayableTrack for MixcloudTrack {
         let local_addr = self.local_addr;
         let uri        = self.uri.clone();
 
-        tokio::task::spawn_blocking(move || {
-            if let Some(url) = hls_url {
-                crate::sources::youtube::hls::HlsReader::new(&url, local_addr, None, None, None)
-                    .map(|r| ResolvedTrack::new(
-                        Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
-                        Some(AudioFormat::Aac),
-                    ))
-                    .map_err(|e| {
-                        error!("Mixcloud HlsReader failed to initialize: {e}");
-                        format!("Failed to init HLS reader: {e}")
-                    })
-            } else if let Some(url) = stream_url {
-                let hint = std::path::Path::new(&url)
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(AudioFormat::from_ext)
-                    .or(Some(AudioFormat::Mp4));
+        if let Some(url) = hls_url {
+            crate::sources::youtube::hls::HlsReader::new(&url, local_addr, None, None, None)
+                .map(|r| ResolvedTrack::new(
+                    Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
+                    Some(AudioFormat::Aac),
+                ))
+                .map_err(|e| {
+                    error!("Mixcloud HlsReader failed to initialize: {e}");
+                    format!("Failed to init HLS reader: {e}")
+                })
+        } else if let Some(url) = stream_url {
+            let hint = std::path::Path::new(&url)
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(AudioFormat::from_ext)
+                .or(Some(AudioFormat::Mp4));
 
-                super::reader::MixcloudReader::new(&url, local_addr)
-                    .map(|r| ResolvedTrack::new(
-                        Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
-                        hint,
-                    ))
-                    .map_err(|e| {
-                        error!("MixcloudReader failed to initialize: {e}");
-                        format!("Failed to init reader: {e}")
-                    })
-            } else {
-                error!("Mixcloud: no stream URL available for {uri}");
-                Err(format!("No stream URL available for {uri}"))
-            }
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking failed: {e}"))?
+            super::reader::MixcloudReader::new(&url, local_addr)
+                .await
+                .map(|r| ResolvedTrack::new(
+                    Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
+                    hint,
+                ))
+                .map_err(|e| {
+                    error!("MixcloudReader failed to initialize: {e}");
+                    format!("Failed to init reader: {e}")
+                })
+        } else {
+            error!("Mixcloud: no stream URL available for {uri}");
+            Err(format!("No stream URL available for {uri}"))
+        }
     }
 }

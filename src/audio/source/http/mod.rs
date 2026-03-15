@@ -22,9 +22,8 @@ pub struct HttpSource {
 }
 
 impl HttpSource {
-    pub fn new(client: reqwest::Client, url: &str) -> AnyResult<Self> {
-        let handle = tokio::runtime::Handle::current();
-        let response = handle.block_on(Self::fetch_stream(&client, url, 0, None))?;
+    pub async fn new(client: reqwest::Client, url: &str) -> AnyResult<Self> {
+        let response = Self::fetch_stream(&client, url, 0, None).await?;
 
         let len = response
             .headers()
@@ -45,6 +44,7 @@ impl HttpSource {
         let shared = Arc::new((Mutex::new(SharedState::new()), Condvar::new()));
         let shared_clone = Arc::clone(&shared);
         let url_clone = url.to_string();
+        let handle = tokio::runtime::Handle::current();
         let handle_clone = handle.clone();
 
         thread::Builder::new()

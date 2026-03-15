@@ -35,6 +35,7 @@ impl PlayableTrack for SoundCloudTrack {
                     self.local_addr,
                     self.proxy.clone(),
                 )
+                .await
                 .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
                 .map_err(|e| format!("Failed to open stream: {e}"))?,
                 AudioFormat::Mp3,
@@ -46,6 +47,7 @@ impl PlayableTrack for SoundCloudTrack {
                     self.local_addr,
                     self.proxy.clone(),
                 )
+                .await
                 .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
                 .map_err(|e| format!("Failed to open stream: {e}"))?,
                 AudioFormat::Mp4,
@@ -58,6 +60,7 @@ impl PlayableTrack for SoundCloudTrack {
                     self.local_addr,
                     self.proxy.clone(),
                 )
+                .await
                 .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
                 .map_err(|e| format!("Failed to init HLS reader: {e}"))?,
                 AudioFormat::Opus,
@@ -70,6 +73,7 @@ impl PlayableTrack for SoundCloudTrack {
                     self.local_addr,
                     self.proxy.clone(),
                 )
+                .await
                 .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
                 .map_err(|e| format!("Failed to init HLS reader: {e}"))?,
                 AudioFormat::Mp3,
@@ -82,6 +86,7 @@ impl PlayableTrack for SoundCloudTrack {
                     self.local_addr,
                     self.proxy.clone(),
                 )
+                .await
                 .map(|r| Box::new(r) as Box<dyn symphonia::core::io::MediaSource>)
                 .map_err(|e| format!("Failed to init HLS reader: {e}"))?,
                 AudioFormat::Aac,

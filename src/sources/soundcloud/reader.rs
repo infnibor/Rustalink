@@ -28,13 +28,13 @@ pub struct SoundCloudReader {
 }
 
 impl SoundCloudReader {
-    pub fn new(
+    pub async fn new(
         url: &str,
         local_addr: Option<std::net::IpAddr>,
         proxy: Option<HttpProxyConfig>,
     ) -> AnyResult<Self> {
         let client = create_client(USER_AGENT.to_owned(), local_addr, proxy, None)?;
-        let inner = HttpSource::new(client, url)?;
+        let inner = HttpSource::new(client, url).await?;
         Ok(Self { inner })
     }
 }
@@ -100,7 +100,7 @@ pub struct SoundCloudHlsReader {
 }
 
 impl SoundCloudHlsReader {
-    pub fn new(
+    pub async fn new(
         manifest_url: &str,
         bitrate_bps: u64,
         local_addr: Option<std::net::IpAddr>,
@@ -108,7 +108,7 @@ impl SoundCloudHlsReader {
     ) -> AnyResult<Self> {
         let handle = tokio::runtime::Handle::current();
         let client = create_client(USER_AGENT.to_owned(), local_addr, proxy, None)?;
-        let (segment_urls, _map_url) = handle.block_on(resolve_playlist(&client, manifest_url))?;
+        let (segment_urls, _map_url) = resolve_playlist(&client, manifest_url).await?;
         if segment_urls.is_empty() {
             return Err("SoundCloud HLS: playlist contained no segments".into());
         }
@@ -129,7 +129,7 @@ impl SoundCloudHlsReader {
         let first_batch: Vec<Resource> = pending.drain(..first_batch_count).collect();
 
         for res in &first_batch {
-            let _ = handle.block_on(fetch_and_demux_into(&client, res, &mut initial_buf));
+            let _ = fetch_and_demux_into(&client, res, &mut initial_buf).await;
         }
 
         debug!(
