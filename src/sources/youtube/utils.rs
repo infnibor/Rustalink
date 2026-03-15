@@ -31,14 +31,14 @@ pub async fn create_reader(
             Some(cipher_manager),
             None,
             proxy,
-        )?))
+        ).await?))
     } else if client_name == "TV" {
-        Ok(Box::new(YoutubeReader::new(url, local_addr, proxy)?))
+        Ok(Box::new(YoutubeReader::new(url, local_addr, proxy).await?))
     } else {
         Ok(Box::new(HttpReader::new(url, local_addr, proxy).await?))
     }
 }
-type AnyResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type AnyResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub fn parse_playability_status(body: &serde_json::Value) -> Result<(), String> {
     let playability = body

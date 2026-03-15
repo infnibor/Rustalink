@@ -44,21 +44,23 @@ impl HttpSource {
         let shared = Arc::new((Mutex::new(SharedState::new()), Condvar::new()));
         let shared_clone = Arc::clone(&shared);
         let url_clone = url.to_string();
-        let handle = tokio::runtime::Handle::current();
-        let handle_clone = handle.clone();
 
         thread::Builder::new()
             .name("http-prefetch".into())
             .spawn(move || {
-                prefetch_loop(
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+                rt.block_on(prefetch_loop(
                     shared_clone,
                     client,
                     url_clone,
                     0,
                     Some(response),
                     len,
-                    handle_clone,
-                );
+                ));
             })?;
 
         Ok(Self {

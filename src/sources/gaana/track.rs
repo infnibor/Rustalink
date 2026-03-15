@@ -33,6 +33,7 @@ impl PlayableTrack for GaanaTrack {
 
         if is_hls {
             crate::sources::youtube::hls::HlsReader::new(&url, local_addr, None, None, proxy)
+                .await
                 .map(|r| ResolvedTrack::new(
                     Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
                     Some(AudioFormat::Aac),

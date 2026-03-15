@@ -36,6 +36,7 @@ impl PlayableTrack for MixcloudTrack {
 
         if let Some(url) = hls_url {
             crate::sources::youtube::hls::HlsReader::new(&url, local_addr, None, None, None)
+                .await
                 .map(|r| ResolvedTrack::new(
                     Box::new(r) as Box<dyn symphonia::core::io::MediaSource>,
                     Some(AudioFormat::Aac),

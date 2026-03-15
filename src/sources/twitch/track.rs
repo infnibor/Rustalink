@@ -38,7 +38,7 @@ impl PlayableTrack for TwitchTrack {
             self.proxy.clone(),
             handle,
             err_tx,
-        )) as Box<dyn MediaSource>;
+        ).await) as Box<dyn MediaSource>;
 
         Ok(ResolvedTrack::new(reader, Some(AudioFormat::Aac)))
     }
@@ -51,18 +51,16 @@ struct LiveHlsReader {
 }
 
 impl LiveHlsReader {
-    fn new(
+    pub async fn new(
         manifest_url: String,
         local_addr: Option<IpAddr>,
         proxy: Option<HttpProxyConfig>,
-        handle: tokio::runtime::Handle,
+        _handle: tokio::runtime::Handle,
         err_tx: flume::Sender<String>,
     ) -> Self {
         let (chunk_tx, chunk_rx) = flume::bounded::<Vec<u8>>(16);
 
-        tokio::task::spawn_blocking(move || {
-            let _guard = handle.enter();
-
+        tokio::spawn(async move {
             let mut builder =
                 reqwest::Client::builder().timeout(std::time::Duration::from_secs(15));
 
@@ -102,11 +100,11 @@ impl LiveHlsReader {
                 std::collections::VecDeque::with_capacity(50);
 
             loop {
-                let text = match handle.block_on(fetch_text(&client, &manifest_url)) {
+                let text = match fetch_text(&client, &manifest_url).await {
                     Ok(t) => t,
                     Err(e) => {
                         tracing::warn!("Twitch: live playlist refresh failed: {e}");
-                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                         continue;
                     }
                 };
@@ -119,7 +117,7 @@ impl LiveHlsReader {
                     }
 
                     let mut raw = Vec::new();
-                    if let Err(e) = handle.block_on(fetch_segment_into(&client, &seg, &mut raw)) {
+                    if let Err(e) = fetch_segment_into(&client, &seg, &mut raw).await {
                         tracing::warn!("Twitch: segment fetch error: {e}");
                         continue;
                     }
@@ -150,7 +148,7 @@ impl LiveHlsReader {
                 }
 
                 let wait = (target_duration / 2.0).max(1.0);
-                std::thread::sleep(std::time::Duration::from_secs_f64(wait));
+                tokio::time::sleep(std::time::Duration::from_secs_f64(wait)).await;
             }
         });
 
