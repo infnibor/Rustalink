@@ -4,13 +4,7 @@
 //! Soft limiter prevents clipping.
 
 use crate::audio::constants::{INT16_MAX_F, INT16_MIN_F};
-
-/// Fade curve shapes.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FadeCurve {
-    Linear,
-    Sinusoidal,
-}
+use crate::audio::effects::fade::FadeCurve;
 
 /// Per-frame volume processor with soft limiter and sinusoidal fade support.
 pub struct VolumeEffect {
@@ -24,15 +18,12 @@ pub struct VolumeEffect {
     fade_active: bool,
     fade_curve: FadeCurve,
 
-    _limiter_threshold: f32, // 0.0 – 1.0 relative to INT16_MAX
     limiter_softness: f32,
-
     threshold_value: f32,
     limit_headroom: f32,
 
     limiter_lut: [f32; 1024],
 
-    _sample_rate: u32,
     channels: usize,
 }
 
@@ -49,7 +40,8 @@ impl VolumeEffect {
             *val = 1.0 - (-overshoot * limiter_softness).exp();
         }
 
-        let fade_frames_total = (sample_rate as usize * 1000) / 1000;
+        // 1-second default fade duration (in samples).
+        let fade_frames_total = sample_rate as usize;
 
         Self {
             current_volume: volume,
@@ -59,17 +51,15 @@ impl VolumeEffect {
             fade_frames_elapsed: fade_frames_total, // start "done"
             fade_active: false,
             fade_curve: FadeCurve::Sinusoidal,
-            _limiter_threshold: limiter_threshold,
             limiter_softness,
             threshold_value,
             limit_headroom,
             limiter_lut,
-            _sample_rate: sample_rate,
             channels,
         }
     }
 
-    /// Set the target volume.  Triggers a sinusoidal fade from current → target.
+    /// Set the target volume. Triggers a sinusoidal fade from current → target.
     pub fn set_volume(&mut self, volume: f32) {
         if (volume - self.target_volume).abs() < f32::EPSILON {
             return;
@@ -95,13 +85,6 @@ impl VolumeEffect {
     /// Get current gain (after any ongoing fade step).
     pub fn current_volume(&self) -> f32 {
         self.current_volume
-    }
-
-    fn curve_value(&self, t: f32) -> f32 {
-        match self.fade_curve {
-            FadeCurve::Linear => t,
-            FadeCurve::Sinusoidal => 0.5 * (1.0 - (t * std::f32::consts::PI).cos()),
-        }
     }
 
     #[inline(always)]
@@ -141,8 +124,8 @@ impl VolumeEffect {
             let t_end = next as f32 / self.fade_frames_total as f32;
 
             let range = self.target_volume - self.start_volume;
-            let gs = self.start_volume + range * self.curve_value(t_start);
-            let ge = self.start_volume + range * self.curve_value(t_end);
+            let gs = self.start_volume + range * self.fade_curve.value(t_start);
+            let ge = self.start_volume + range * self.fade_curve.value(t_end);
 
             self.fade_frames_elapsed = next;
             if next >= self.fade_frames_total {
