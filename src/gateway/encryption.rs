@@ -112,10 +112,10 @@ impl DaveHandler {
         debug!("DAVE session setup (v{})", version);
         let key_package = session.create_key_package().map_err(map_boxed_err)?;
 
-        if let Some(saved) = self.saved_external_sender.clone()
+        if let Some(saved) = self.saved_external_sender.as_deref()
             && let Some(sess) = &mut self.session
         {
-            match sess.set_external_sender(&saved) {
+            match sess.set_external_sender(saved) {
                 Ok(()) => {
                     self.external_sender_set = true;
                     debug!("DAVE re-applied saved external sender after epoch reset");
@@ -221,7 +221,12 @@ impl DaveHandler {
     fn process_handshake_message(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<u16> {
         let tag = if is_welcome { "welcome" } else { "commit" };
         if data.len() < 2 {
-            return Err(short_payload_err(&format!("DAVE {tag}")));
+            let msg = if is_welcome {
+                "DAVE welcome"
+            } else {
+                "DAVE commit"
+            };
+            return Err(short_payload_err(msg));
         }
 
         let transition_id = u16::from_be_bytes([data[0], data[1]]);

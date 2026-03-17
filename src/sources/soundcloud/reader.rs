@@ -28,13 +28,13 @@ pub struct SoundCloudReader {
 }
 
 impl SoundCloudReader {
-    pub fn new(
+    pub async fn new(
         url: &str,
         local_addr: Option<std::net::IpAddr>,
         proxy: Option<HttpProxyConfig>,
     ) -> AnyResult<Self> {
         let client = create_client(USER_AGENT.to_owned(), local_addr, proxy, None)?;
-        let inner = HttpSource::new(client, url)?;
+        let inner = HttpSource::new(client, url).await?;
         Ok(Self { inner })
     }
 }
@@ -100,15 +100,14 @@ pub struct SoundCloudHlsReader {
 }
 
 impl SoundCloudHlsReader {
-    pub fn new(
+    pub async fn new(
         manifest_url: &str,
         bitrate_bps: u64,
         local_addr: Option<std::net::IpAddr>,
         proxy: Option<HttpProxyConfig>,
     ) -> AnyResult<Self> {
-        let handle = tokio::runtime::Handle::current();
         let client = create_client(USER_AGENT.to_owned(), local_addr, proxy, None)?;
-        let (segment_urls, _map_url) = handle.block_on(resolve_playlist(&client, manifest_url))?;
+        let (segment_urls, _map_url) = resolve_playlist(&client, manifest_url).await?;
         if segment_urls.is_empty() {
             return Err("SoundCloud HLS: playlist contained no segments".into());
         }
@@ -129,7 +128,7 @@ impl SoundCloudHlsReader {
         let first_batch: Vec<Resource> = pending.drain(..first_batch_count).collect();
 
         for res in &first_batch {
-            let _ = handle.block_on(fetch_and_demux_into(&client, res, &mut initial_buf));
+            let _ = fetch_and_demux_into(&client, res, &mut initial_buf).await;
         }
 
         debug!(
@@ -154,11 +153,15 @@ impl SoundCloudHlsReader {
         let bg_client = client;
         let bg_all = all_segments.clone();
 
-        let handle_clone = handle.clone();
         let bg_thread = thread::Builder::new()
             .name("sc-hls-prefetch".into())
             .spawn(move || {
-                prefetch_loop(shared_bg, bg_client, bg_all, handle_clone);
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+                rt.block_on(prefetch_loop(shared_bg, bg_client, bg_all));
             })?;
 
         Ok(Self {
@@ -359,39 +362,79 @@ impl Drop for SoundCloudHlsReader {
     }
 }
 
-fn prefetch_loop(
+async fn prefetch_loop(
     shared: Arc<(Mutex<SharedState>, Condvar)>,
     client: reqwest::Client,
     all_segments: Vec<Resource>,
-    handle: tokio::runtime::Handle,
 ) {
     let (lock, cvar) = &*shared;
 
     loop {
-        let mut state = lock.lock();
-        while !state.need_data {
-            cvar.wait(&mut state);
+        enum Action {
+            Stop,
+            Seek {
+                target_index: usize,
+                batch: Vec<Resource>,
+            },
+            Fetch {
+                batch: Vec<Resource>,
+                current_idx: usize,
+            },
+            Eos,
         }
 
-        match std::mem::replace(&mut state.command, PrefetchCommand::Continue) {
-            PrefetchCommand::Stop => return,
-            PrefetchCommand::Seek(target_index) => {
-                state.next_buf.clear();
-                state.eos = false;
-                state.current_segment_index = target_index;
-                state.pending = all_segments[target_index..].to_vec();
+        // Acquire lock, wait for work, extract what we need, then drop the guard.
+        let action = {
+            let mut state = lock.lock();
+            while !state.need_data {
+                cvar.wait(&mut state);
+            }
 
-                let count = if !state.pending.is_empty() { 1 } else { 0 };
-                let batch: Vec<Resource> = state.pending.drain(..count).collect();
-                drop(state);
+            match std::mem::replace(&mut state.command, PrefetchCommand::Continue) {
+                PrefetchCommand::Stop => Action::Stop,
+                PrefetchCommand::Seek(target_index) => {
+                    state.next_buf.clear();
+                    state.eos = false;
+                    state.current_segment_index = target_index;
+                    state.pending = all_segments[target_index..].to_vec();
+                    let count = if !state.pending.is_empty() { 1 } else { 0 };
+                    let batch = state.pending.drain(..count).collect();
+                    Action::Seek {
+                        target_index,
+                        batch,
+                    }
+                }
+                PrefetchCommand::Continue => {
+                    if state.pending.is_empty() {
+                        state.eos = true;
+                        state.need_data = false;
+                        cvar.notify_one();
+                        Action::Eos
+                    } else {
+                        let count = PREFETCH_SEGMENTS.min(state.pending.len());
+                        let batch = state.pending.drain(..count).collect();
+                        let current_idx = state.current_segment_index;
+                        Action::Fetch { batch, current_idx }
+                    }
+                }
+            }
+        }; // MutexGuard dropped here — no guard held across any .await below
 
+        match action {
+            Action::Stop => return,
+            Action::Eos => continue,
+
+            Action::Seek {
+                target_index,
+                batch,
+            } => {
                 let mut tmp_buf = Vec::new();
                 for res in &batch {
                     debug!(
                         "SoundCloud HLS prefetcher: fetching seek target segment {}",
                         target_index
                     );
-                    let _ = handle.block_on(fetch_and_demux_into(&client, res, &mut tmp_buf));
+                    let _ = fetch_and_demux_into(&client, res, &mut tmp_buf).await;
                 }
                 debug!(
                     "SoundCloud HLS prefetcher: seek target fetched ({} bytes)",
@@ -405,46 +448,31 @@ fn prefetch_loop(
                 state.seek_done = true;
                 state.eos = state.pending.is_empty();
                 cvar.notify_one();
-                continue;
             }
-            PrefetchCommand::Continue => {}
-        }
 
-        if state.pending.is_empty() {
-            state.eos = true;
-            state.need_data = false;
-            cvar.notify_one();
-            continue;
-        }
-
-        let count = PREFETCH_SEGMENTS.min(state.pending.len());
-        let batch: Vec<Resource> = state.pending.drain(..count).collect();
-        let current_idx = state.current_segment_index;
-        drop(state);
-
-        let mut tmp_buf = Vec::with_capacity(256 * 1024);
-        for res in &batch {
-            {
-                let s = lock.lock();
-                if !matches!(s.command, PrefetchCommand::Continue) {
-                    break;
+            Action::Fetch { batch, current_idx } => {
+                let mut tmp_buf = Vec::with_capacity(256 * 1024);
+                for res in &batch {
+                    {
+                        let s = lock.lock();
+                        if !matches!(s.command, PrefetchCommand::Continue) {
+                            break;
+                        }
+                    }
+                    let _ = fetch_and_demux_into(&client, res, &mut tmp_buf).await;
                 }
+
+                let mut state = lock.lock();
+                if !matches!(state.command, PrefetchCommand::Continue) {
+                    continue;
+                }
+                state.next_buf.extend_from_slice(&tmp_buf);
+                state.current_segment_index = current_idx + batch.len();
+                state.eos = state.pending.is_empty();
+                state.need_data = false;
+                cvar.notify_one();
             }
-            let _ = handle.block_on(fetch_and_demux_into(&client, res, &mut tmp_buf));
         }
-
-        let mut state = lock.lock();
-        if !matches!(state.command, PrefetchCommand::Continue) {
-            // Re-enter the loop to immediately handle the new command (e.g. Seek)
-            // without resetting need_data to false, which would cause a deadlock
-            continue;
-        }
-
-        state.next_buf.extend_from_slice(&tmp_buf);
-        state.current_segment_index = current_idx + batch.len();
-        state.eos = state.pending.is_empty();
-        state.need_data = false;
-        cvar.notify_one();
     }
 }
 

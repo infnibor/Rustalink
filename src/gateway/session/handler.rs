@@ -241,12 +241,13 @@ impl<'a> SessionState<'a> {
 
     fn on_hello(&mut self, d: Value) -> Option<SessionOutcome> {
         let interval = d["heartbeat_interval"].as_u64().unwrap_or(30_000);
-        if self.heartbeat_handle.is_some() {
-            warn!(
-                "[{}] Received unexpected mid-session HELLO. Forcing re-identify.",
+
+        if let Some(h) = self.heartbeat_handle.take() {
+            debug!(
+                "[{}] Restarting heartbeat on HELLO (was already running)",
                 self.gateway.guild_id
             );
-            return Some(SessionOutcome::Identify);
+            h.abort();
         }
 
         trace!(
@@ -295,7 +296,7 @@ impl<'a> SessionState<'a> {
                 .iter()
                 .find(|&&p| modes.iter().any(|m| m.as_str() == Some(p)))
             {
-                self.selected_mode = m.to_string();
+                self.selected_mode = (*m).to_owned();
             }
         }
 
@@ -315,13 +316,13 @@ impl<'a> SessionState<'a> {
                 .as_u64()
                 .unwrap_or(DAVE_INITIAL_VERSION as u64) as u16;
             let mut dave = self.dave.lock().await;
-            if ver > 0 {
+            if ver == 0 {
+                dave.reset();
+            } else {
                 dave.set_protocol_version(ver);
                 if let Ok(kp) = dave.setup_session(ver) {
                     self.send_binary(26, &kp);
                 }
-            } else {
-                dave.reset();
             }
         }
 

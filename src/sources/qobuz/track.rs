@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use md5::{Digest, Md5};
 
 use crate::{
-    audio::{AudioFrame, processor::DecoderCommand},
+    common::types::AnyResult,
     protocol::tracks::TrackInfo,
     sources::{
         http::HttpTrack,
-        plugin::{DecoderOutput, PlayableTrack},
+        playable_track::{PlayableTrack, ResolvedTrack},
         qobuz::token::QobuzTokenTracker,
     },
 };
@@ -22,64 +23,26 @@ pub struct QobuzTrack {
     pub client: Arc<reqwest::Client>,
 }
 
+#[async_trait]
 impl PlayableTrack for QobuzTrack {
-    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
-        let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
-        let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
-        let (err_tx, err_rx) = flume::bounded::<String>(1);
+    async fn resolve(&self) -> Result<ResolvedTrack, String> {
+        let url = switch_media_url(&self.client, &self.token_tracker, &self.info.identifier)
+            .await
+            .map_err(|e| {
+                format!(
+                    "Qobuz: Failed to resolve media URL for {}: {e}",
+                    self.info.identifier
+                )
+            })?
+            .ok_or_else(|| "Failed to resolve Qobuz media URL".to_string())?;
 
-        let info = self.info.to_owned();
-        let token_tracker = self.token_tracker.to_owned();
-        let client = self.client.to_owned();
-
-        tokio::spawn(async move {
-            let url = switch_media_url(&client, &token_tracker, &info.identifier).await;
-
-            if let Ok(Some(url)) = url {
-                let http_track = HttpTrack {
-                    url,
-                    local_addr: None,
-                    proxy: None,
-                };
-                let (inner_rx, inner_cmd_tx, inner_err_rx) =
-                    http_track.start_decoding(config.clone());
-
-                // Proxy commands
-                let cmd_tx_clone = inner_cmd_tx.clone();
-                tokio::spawn(async move {
-                    while let Ok(cmd) = cmd_rx.recv_async().await {
-                        let _ = cmd_tx_clone.send(cmd);
-                    }
-                });
-
-                // Proxy errors
-                let err_tx_clone = err_tx.clone();
-                tokio::spawn(async move {
-                    while let Ok(err) = inner_err_rx.recv_async().await {
-                        let _ = err_tx_clone.send(err);
-                    }
-                });
-
-                // Proxy samples
-                while let Ok(sample) = inner_rx.recv_async().await {
-                    if tx.send(sample).is_err() {
-                        break;
-                    }
-                }
-            } else {
-                let error_msg = if let Err(e) = url {
-                    format!(
-                        "Qobuz: Failed to resolve media URL for {identifier}: {e}",
-                        identifier = info.identifier
-                    )
-                } else {
-                    "Failed to resolve Qobuz media URL".to_owned()
-                };
-                let _ = err_tx.send(error_msg);
-            }
-        });
-
-        (rx, cmd_tx, err_rx)
+        HttpTrack {
+            url,
+            local_addr: None,
+            proxy: None,
+        }
+        .resolve()
+        .await
     }
 }
 
@@ -87,7 +50,7 @@ async fn switch_media_url(
     client: &Arc<reqwest::Client>,
     token_tracker: &QobuzTokenTracker,
     track_id: &str,
-) -> crate::common::types::AnyResult<Option<String>> {
+) -> AnyResult<Option<String>> {
     let tokens = token_tracker
         .get_tokens()
         .await
@@ -108,6 +71,7 @@ async fn switch_media_url(
         "trackgetFileUrlformat_id{format_id}intent{intent}track_id{track_id}{unix_ts}{}",
         tokens.app_secret
     );
+
     let mut hasher = Md5::new();
     hasher.update(sig_data.as_bytes());
     let sig = hex::encode(hasher.finalize());

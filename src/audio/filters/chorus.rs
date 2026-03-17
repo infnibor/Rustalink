@@ -1,4 +1,5 @@
 use super::{AudioFilter, delay_line::DelayLine, lfo::Lfo};
+use crate::audio::constants::TARGET_SAMPLE_RATE;
 
 const MAX_DELAY_MS: f32 = 50.0;
 const BUFFER_SIZE: usize = ((48000.0 * MAX_DELAY_MS) / 1000.0) as usize;
@@ -31,13 +32,16 @@ impl ChorusFilter {
             ],
         };
 
-        filter.lfos[0].set_phase(0.0);
-        filter.lfos[1].set_phase(std::f64::consts::PI / 2.0);
-        filter.lfos[2].set_phase(std::f64::consts::PI);
-        filter.lfos[3].set_phase(3.0 * std::f64::consts::PI / 2.0);
-
+        filter.set_lfo_phases();
         filter.update(rate, depth, delay, mix, feedback);
         filter
+    }
+
+    fn set_lfo_phases(&mut self) {
+        self.lfos[0].set_phase(0.0);
+        self.lfos[1].set_phase(std::f64::consts::PI / 2.0);
+        self.lfos[2].set_phase(std::f64::consts::PI);
+        self.lfos[3].set_phase(3.0 * std::f64::consts::PI / 2.0);
     }
 
     pub fn update(&mut self, rate: f32, depth: f32, delay: f32, mix: f32, feedback: f32) {
@@ -62,7 +66,7 @@ impl AudioFilter for ChorusFilter {
             return;
         }
 
-        let fs = 48000.0;
+        let fs = TARGET_SAMPLE_RATE as f32;
         let delay_width = self.depth * (fs * 0.004);
         let center_delay_samples = self.delay * (fs / 1000.0);
         let center_delay_samples2 = center_delay_samples * 1.2;
@@ -117,9 +121,6 @@ impl AudioFilter for ChorusFilter {
         for delay in &mut self.delays {
             delay.clear();
         }
-        self.lfos[0].set_phase(0.0);
-        self.lfos[1].set_phase(std::f64::consts::PI / 2.0);
-        self.lfos[2].set_phase(std::f64::consts::PI);
-        self.lfos[3].set_phase(3.0 * std::f64::consts::PI / 2.0);
+        self.set_lfo_phases();
     }
 }

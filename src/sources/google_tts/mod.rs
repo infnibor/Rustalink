@@ -7,10 +7,7 @@ use tracing::debug;
 use crate::{
     config::sources::GoogleTtsConfig,
     protocol::tracks::{LoadResult, Track, TrackInfo},
-    sources::{
-        http::HttpTrack,
-        plugin::{BoxedTrack, SourcePlugin},
-    },
+    sources::{SourcePlugin, http::HttpTrack, playable_track::BoxedTrack},
 };
 
 pub struct GoogleTtsSource {
@@ -126,7 +123,7 @@ impl SourcePlugin for GoogleTtsSource {
         let url = self.build_url(&language, &text);
 
         // Use HttpTrack to decode the audio stream
-        Some(Box::new(HttpTrack {
+        Some(Arc::new(HttpTrack {
             url,
             local_addr: routeplanner.and_then(|rp| rp.get_address()),
             proxy: None, // Google TTS doesn't currently support proxy config directly in the new implementation, similar to Spotify

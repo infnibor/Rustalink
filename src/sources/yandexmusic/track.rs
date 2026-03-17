@@ -1,14 +1,15 @@
 use std::{net::IpAddr, sync::Arc};
 
+use async_trait::async_trait;
 use regex::Regex;
-use tracing::{debug, error};
+use tracing::debug;
 
 use super::utils;
 use crate::{
-    audio::{AudioFrame, processor::DecoderCommand},
+    config::HttpProxyConfig,
     sources::{
         http::HttpTrack,
-        plugin::{DecoderOutput, PlayableTrack},
+        playable_track::{PlayableTrack, ResolvedTrack},
     },
 };
 
@@ -16,65 +17,30 @@ pub struct YandexMusicTrack {
     pub client: Arc<reqwest::Client>,
     pub track_id: String,
     pub local_addr: Option<IpAddr>,
-    pub proxy: Option<crate::config::HttpProxyConfig>,
+    pub proxy: Option<HttpProxyConfig>,
 }
 
+#[async_trait]
 impl PlayableTrack for YandexMusicTrack {
-    fn start_decoding(&self, config: crate::config::player::PlayerConfig) -> DecoderOutput {
-        let (tx, rx) = flume::bounded::<AudioFrame>((config.buffer_duration_ms / 20) as usize);
-        let (cmd_tx, cmd_rx) = flume::unbounded::<DecoderCommand>();
-        let (err_tx, err_rx) = flume::bounded::<String>(1);
+    async fn resolve(&self) -> Result<ResolvedTrack, String> {
+        let stream_url = fetch_download_url(&self.client, &self.track_id)
+            .await
+            .ok_or_else(|| {
+                format!(
+                    "Failed to fetch Yandex Music stream URL for track ID {}",
+                    self.track_id
+                )
+            })?;
 
-        let track_id = self.track_id.clone();
-        let client = self.client.clone();
-        let local_addr = self.local_addr;
-        let proxy = self.proxy.clone();
+        debug!("Yandex Music stream URL: {}", stream_url);
 
-        tokio::spawn(async move {
-            match fetch_download_url(&client, &track_id).await {
-                Some(stream_url) => {
-                    debug!("Yandex Music stream URL: {}", stream_url);
-                    let http_track = HttpTrack {
-                        url: stream_url,
-                        local_addr,
-                        proxy,
-                    };
-                    let (inner_rx, inner_cmd_tx, inner_err_rx) =
-                        http_track.start_decoding(config.clone());
+        let http_track = HttpTrack {
+            url: stream_url,
+            local_addr: self.local_addr,
+            proxy: self.proxy.clone(),
+        };
 
-                    let inner_cmd_tx_clone = inner_cmd_tx.clone();
-                    tokio::spawn(async move {
-                        while let Ok(cmd) = cmd_rx.recv_async().await {
-                            if inner_cmd_tx_clone.send(cmd).is_err() {
-                                break;
-                            }
-                        }
-                    });
-
-                    let err_tx_clone = err_tx.clone();
-                    tokio::spawn(async move {
-                        while let Ok(err) = inner_err_rx.recv_async().await {
-                            let _ = err_tx_clone.send(err);
-                        }
-                    });
-
-                    while let Ok(sample) = inner_rx.recv_async().await {
-                        if tx.send(sample).is_err() {
-                            break;
-                        }
-                    }
-                }
-                None => {
-                    error!(
-                        "Failed to fetch Yandex Music stream URL for track ID {}",
-                        track_id
-                    );
-                    let _ = err_tx.send("Failed to fetch stream URL".to_string());
-                }
-            }
-        });
-
-        (rx, cmd_tx, err_rx)
+        http_track.resolve().await
     }
 }
 
@@ -103,10 +69,10 @@ pub(super) async fn fetch_download_url(client: &Arc<reqwest::Client>, id: &str) 
         re.captures(text)?.name("val")?.as_str().to_string().into()
     };
 
-    let host: String = get_tag(&xml_text, "host")?;
-    let path: String = get_tag(&xml_text, "path")?;
-    let ts: String = get_tag(&xml_text, "ts")?;
-    let s: String = get_tag(&xml_text, "s")?;
+    let host = get_tag(&xml_text, "host")?;
+    let path = get_tag(&xml_text, "path")?;
+    let ts = get_tag(&xml_text, "ts")?;
+    let s = get_tag(&xml_text, "s")?;
 
     let md5 = utils::generate_download_sign(&path, &s);
 

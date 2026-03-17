@@ -14,7 +14,7 @@ pub struct WebmOpusDemuxer {
 }
 
 impl WebmOpusDemuxer {
-    /// Open a WebM/Matroska source.  Returns `None` if no Opus track is found.
+    /// Open a WebM/Matroska source. Returns `None` if no Opus track is found.
     pub fn open(source: Box<dyn MediaSource>) -> Result<Option<Self>, Error> {
         let mss = MediaSourceStream::new(source, Default::default());
         let mut hint = Hint::new();
@@ -28,18 +28,13 @@ impl WebmOpusDemuxer {
         )?;
 
         let format = probed.format;
-        let track = format
+        let track_id = format
             .tracks()
             .iter()
-            .find(|t| t.codec_params.codec == CODEC_TYPE_OPUS);
+            .find(|t| t.codec_params.codec == CODEC_TYPE_OPUS)
+            .map(|t| t.id);
 
-        match track {
-            Some(t) => {
-                let track_id = t.id;
-                Ok(Some(Self { format, track_id }))
-            }
-            None => Ok(None),
-        }
+        Ok(track_id.map(|track_id| Self { format, track_id }))
     }
 
     /// Read the next raw Opus packet.
@@ -59,7 +54,8 @@ impl WebmOpusDemuxer {
                 continue;
             }
 
-            return Ok(Some(packet.data.to_vec()));
+            // `packet.data` is `Box<[u8]>` — into_vec() converts in place (no copy).
+            return Ok(Some(packet.data.into_vec()));
         }
     }
 }

@@ -105,14 +105,13 @@ impl Drop for HlsReader {
 }
 
 impl HlsReader {
-    pub fn new(
+    pub async fn new(
         manifest_url: &str,
         local_addr: Option<std::net::IpAddr>,
         cipher_manager: Option<Arc<YouTubeCipherManager>>,
         player_url: Option<String>,
         proxy: Option<HttpProxyConfig>,
     ) -> AnyResult<Self> {
-        let handle = tokio::runtime::Handle::current();
         let mut builder = reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36")
             .timeout(std::time::Duration::from_secs(15));
@@ -133,8 +132,7 @@ impl HlsReader {
         }
 
         let client: reqwest::Client = builder.build()?;
-        let (segment_urls, map_url) =
-            handle.block_on(async { resolve_playlist(&client, manifest_url).await })?;
+        let (segment_urls, map_url) = resolve_playlist(&client, manifest_url).await?;
 
         if segment_urls.is_empty() {
             return Err("HLS playlist contained no segments".into());
@@ -149,19 +147,19 @@ impl HlsReader {
 
         let all_segments = segment_urls.clone();
 
-        // ── Bootstrap: fetch init segment + first batch synchronously ──
+        // ── Bootstrap: fetch init segment + first batch asynchronously ──
         let mut initial_buf = Vec::with_capacity(512 * 1024);
         let mut cached_map_data = None;
 
         if let Some(map_res) = &map_url {
-            let resolved = resolve_resource_static(map_res, &cipher_manager, &player_url)?;
+            let resolved = resolve_resource_static(map_res, &cipher_manager, &player_url).await?;
             let mut map_data = Vec::new();
-            handle.block_on(fetch_segment_into(&client, &resolved, &mut map_data))?;
+            fetch_segment_into(&client, &resolved, &mut map_data).await?;
             initial_buf.extend_from_slice(&map_data);
             cached_map_data = Some(map_data);
         }
 
-        // Bootstrap: fetch exactly ONE segment synchronously so decoding can start
+        // Bootstrap: fetch exactly ONE segment asynchronously so decoding can start
         // immediately. The background thread fills the rest concurrently.
         // Fetching more here (e.g. 3) would block the decode thread for 3× network RTT.
         let first_batch_count = 1_usize.min(segment_urls.len());
@@ -177,8 +175,8 @@ impl HlsReader {
         */
 
         for res in &first_batch {
-            let resolved = resolve_resource_static(res, &cipher_manager, &player_url)?;
-            handle.block_on(fetch_and_demux_into(&client, &resolved, &mut initial_buf))?;
+            let resolved = resolve_resource_static(res, &cipher_manager, &player_url).await?;
+            fetch_and_demux_into(&client, &resolved, &mut initial_buf).await?;
         }
 
         let current_segment_index = first_batch.len();
@@ -210,7 +208,12 @@ impl HlsReader {
         let bg_thread = std::thread::Builder::new()
             .name("hls-prefetch".into())
             .spawn(move || {
-                prefetch_loop(
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+                rt.block_on(prefetch_loop(
                     shared_bg,
                     abort_flag_bg,
                     bg_client,
@@ -218,8 +221,7 @@ impl HlsReader {
                     bg_player_url,
                     bg_cached_map,
                     bg_all_segments,
-                    handle,
-                );
+                ));
             })
             .expect("failed to spawn HLS prefetch thread");
 
@@ -386,7 +388,7 @@ impl MediaSource for HlsReader {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn prefetch_loop(
+async fn prefetch_loop(
     shared: Arc<(Mutex<SharedState>, Condvar)>,
     abort_flag: Arc<AtomicBool>,
     client: reqwest::Client,
@@ -394,54 +396,78 @@ fn prefetch_loop(
     player_url: Option<String>,
     cached_map_data: Option<Vec<u8>>,
     all_segments: Vec<Resource>,
-    handle: tokio::runtime::Handle,
 ) {
     let (lock, cvar) = &*shared;
 
     loop {
-        // Wait until the reader signals it needs data.
-        let mut state = lock.lock();
-        while !state.need_data {
-            cvar.wait(&mut state);
+        enum Action {
+            Stop,
+            Seek {
+                batch: Vec<Resource>,
+            },
+            Fetch {
+                batch: Vec<Resource>,
+                seg_idx: usize,
+            },
+            Eos,
         }
 
-        // Check for commands.
-        match std::mem::replace(&mut state.command, PrefetchCommand::Continue) {
-            PrefetchCommand::Stop => {
-                return;
+        // Acquire lock, wait for work, extract what we need, then drop the guard.
+        let action = {
+            let mut state = lock.lock();
+            while !state.need_data {
+                cvar.wait(&mut state);
             }
 
-            PrefetchCommand::Seek(target_index) => {
-                // Reset for seek.
-                state.next_buf.clear();
-                state.eos = false;
-                state.current_segment_index = target_index;
-                state.pending = all_segments[target_index..].to_vec();
+            match std::mem::replace(&mut state.command, PrefetchCommand::Continue) {
+                PrefetchCommand::Stop => Action::Stop,
 
-                // Re-use cached map data if available.
-                if let Some(map_data) = &cached_map_data {
-                    state.next_buf.extend_from_slice(map_data);
+                PrefetchCommand::Seek(target_index) => {
+                    state.next_buf.clear();
+                    state.eos = false;
+                    state.current_segment_index = target_index;
+                    state.pending = all_segments[target_index..].to_vec();
+
+                    if let Some(map_data) = &cached_map_data {
+                        state.next_buf.extend_from_slice(map_data);
+                    }
+
+                    let count = if !state.pending.is_empty() { 1 } else { 0 };
+                    let batch = state.pending.drain(..count).collect();
+                    Action::Seek { batch }
                 }
 
-                // Fetch JUST ONE segment to start playback ASAP (minimal latency).
-                // The remaining segments will be fetched in the next loop iteration.
-                let count = if !state.pending.is_empty() { 1 } else { 0 };
-                let batch: Vec<Resource> = state.pending.drain(..count).collect();
+                PrefetchCommand::Continue => {
+                    if state.pending.is_empty() {
+                        state.eos = true;
+                        state.need_data = false;
+                        cvar.notify_one();
+                        Action::Eos
+                    } else {
+                        let count = PREFETCH_SEGMENTS.min(state.pending.len());
+                        let batch = state.pending.drain(..count).collect();
+                        let seg_idx = state.current_segment_index;
+                        Action::Fetch { batch, seg_idx }
+                    }
+                }
+            }
+        }; // MutexGuard dropped here — no guard held across any .await below
 
-                // Drop the lock while fetching (network I/O).
-                drop(state);
+        match action {
+            Action::Stop => return,
+            Action::Eos => continue,
 
+            Action::Seek { batch } => {
                 let mut tmp_buf = Vec::with_capacity(256 * 1024);
                 for res in &batch {
-                    if let Ok(resolved) = resolve_resource_static(res, &cipher_manager, &player_url)
-                        && let Err(e) =
-                            handle.block_on(fetch_and_demux_into(&client, &resolved, &mut tmp_buf))
+                    if let Ok(resolved) =
+                        resolve_resource_static(res, &cipher_manager, &player_url).await
+                        && let Err(e) = fetch_and_demux_into(&client, &resolved, &mut tmp_buf).await
                     {
                         tracing::warn!("HLS prefetch: segment fetch error during seek: {}", e);
                     }
                 }
 
-                // Re-acquire lock and store data.
                 let mut state = lock.lock();
                 state.next_buf.extend_from_slice(&tmp_buf);
                 state.current_segment_index += batch.len();
@@ -449,79 +475,45 @@ fn prefetch_loop(
                 state.seek_done = true;
                 state.eos = state.pending.is_empty();
                 cvar.notify_one();
-                continue;
             }
 
-            PrefetchCommand::Continue => {
-                // Normal prefetch path below.
+            Action::Fetch { batch, seg_idx } => {
+                let mut tmp_buf = Vec::with_capacity(256 * 1024);
+                for res in &batch {
+                    if abort_flag.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    if let Ok(resolved) =
+                        resolve_resource_static(res, &cipher_manager, &player_url).await
+                        && let Err(e) = fetch_and_demux_into(&client, &resolved, &mut tmp_buf).await
+                    {
+                        tracing::warn!("HLS prefetch: segment fetch error: {}", e);
+                    }
+                }
+
+                let mut state = lock.lock();
+                if !matches!(state.command, PrefetchCommand::Continue) {
+                    continue;
+                }
+                state.next_buf.extend_from_slice(&tmp_buf);
+                state.current_segment_index = seg_idx + batch.len();
+                state.eos = state.pending.is_empty();
+                state.need_data = false;
+                cvar.notify_one();
             }
         }
-
-        if state.pending.is_empty() {
-            state.eos = true;
-            state.need_data = false;
-            cvar.notify_one();
-            continue;
-        }
-
-        // Fetch the next batch of segments.
-        let count = PREFETCH_SEGMENTS.min(state.pending.len());
-        let batch: Vec<Resource> = state.pending.drain(..count).collect();
-        let seg_idx = state.current_segment_index;
-
-        // Drop lock while doing network I/O.
-        drop(state);
-
-        /*
-        tracing::debug!(
-            "HLS prefetch: fetching {} segments (index {} → {})",
-            batch.len(),
-            seg_idx,
-            seg_idx + batch.len()
-        );
-        */
-
-        let mut tmp_buf = Vec::with_capacity(256 * 1024);
-        for res in &batch {
-            // Fast abort check between segments — no mutex, just an atomic load.
-            // The full command (Stop/Seek) will be handled in the outer loop's
-            // mutex wait after this inner loop breaks.
-            if abort_flag.load(Ordering::Relaxed) {
-                break;
-            }
-
-            if let Ok(resolved) = resolve_resource_static(res, &cipher_manager, &player_url)
-                && let Err(e) =
-                    handle.block_on(fetch_and_demux_into(&client, &resolved, &mut tmp_buf))
-            {
-                tracing::warn!("HLS prefetch: segment fetch error: {}", e);
-            }
-        }
-
-        // Re-acquire lock and store the fetched data.
-        let mut state = lock.lock();
-        if !matches!(state.command, PrefetchCommand::Continue) {
-            // Re-enter the loop to immediately handle the new command (e.g. Seek)
-            // without resetting need_data to false, which would cause a deadlock
-            continue;
-        }
-
-        state.next_buf.extend_from_slice(&tmp_buf);
-        state.current_segment_index = seg_idx + batch.len();
-        state.eos = state.pending.is_empty();
-        state.need_data = false;
-        cvar.notify_one();
     }
 }
 
 /// Resolve a resource's URL (YouTube cipher / n-token handling).
-fn resolve_resource_static(
+async fn resolve_resource_static(
     res: &Resource,
     cipher_manager: &Option<Arc<YouTubeCipherManager>>,
     player_url: &Option<String>,
 ) -> AnyResult<Resource> {
     let mut resolved = res.clone();
-    resolved.url = resolve_url_string(&res.url, cipher_manager, player_url)?;
+    resolved.url = resolve_url_string(&res.url, cipher_manager, player_url).await?;
     Ok(resolved)
 }
 

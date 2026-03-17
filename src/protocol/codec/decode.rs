@@ -53,7 +53,7 @@ pub fn decode_track(encoded: &str) -> Result<Track, CodecError> {
     let user_data = stream.read_json().unwrap_or_else(|_| serde_json::json!({}));
 
     Ok(Track {
-        encoded: encoded.to_string(),
+        encoded: encoded.to_owned(),
         info: TrackInfo {
             identifier,
             is_seekable: !is_stream,

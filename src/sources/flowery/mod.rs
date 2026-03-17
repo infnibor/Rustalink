@@ -7,10 +7,7 @@ use tracing::debug;
 use crate::{
     config::sources::FloweryConfig,
     protocol::tracks::{LoadResult, Track, TrackInfo},
-    sources::{
-        http::HttpTrack,
-        plugin::{BoxedTrack, SourcePlugin},
-    },
+    sources::{SourcePlugin, http::HttpTrack, playable_track::BoxedTrack},
 };
 
 pub struct FlowerySource {
@@ -179,7 +176,7 @@ impl SourcePlugin for FlowerySource {
         let (text, params) = self.parse_query(identifier);
         let url = self.build_url(&text, params);
 
-        Some(Box::new(HttpTrack {
+        Some(Arc::new(HttpTrack {
             url,
             local_addr: routeplanner.and_then(|rp| rp.get_address()),
             proxy: None,

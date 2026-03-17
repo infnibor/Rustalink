@@ -1,6 +1,6 @@
 [package]
 name = "rustalink"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["appujet", "notdeltaxd", "contributors"]
@@ -40,6 +40,7 @@ thiserror = "2.0.18"
 sysinfo = "0.38.3"
 perf_monitor = "0.2.1"
 prometheus = "0.13"
+tracing-log = "0.2"
 
 tracing-subscriber = { version = "^0.3.20", features = [
     "env-filter",
@@ -80,6 +81,7 @@ tokio = { version = "1.49.0", features = [
 ] }
 axum = { version = "0.8.1", features = ["ws"] }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
+ctr = "0.9"
 
 
 [profile.dev]

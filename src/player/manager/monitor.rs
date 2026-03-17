@@ -40,6 +40,8 @@ pub async fn monitor_loop(ctx: MonitorCtx) {
     let mut stuck_fired = false;
     let mut buffering_started_at: Option<std::time::Instant> = None;
 
+    send_player_update(&ctx, last_pos);
+
     loop {
         interval.tick().await;
         tick = tick.wrapping_add(1);
@@ -114,14 +116,24 @@ async fn handle_playback_stopped(ctx: &MonitorCtx) {
     let reason = match ctx.err_rx.try_recv() {
         Ok(err) => {
             warn!("[{}] mid-playback decoder error: {}", ctx.guild_id, err);
+
+            let message = if err.contains("This video ") || err.contains("This is a private video")
+            {
+                err.clone()
+            } else {
+                "Something went wrong when decoding the track.".to_owned()
+            };
+
+            let short_cause = crate::common::utils::shorten_error_cause(&err);
+
             ctx.session.send_message(&protocol::OutgoingMessage::Event {
                 event: Box::new(RustalinkEvent::TrackException {
                     guild_id: ctx.guild_id.clone(),
                     track: ctx.track.clone(),
                     exception: TrackException {
-                        message: Some(err.clone()),
+                        message: Some(message),
                         severity: crate::common::Severity::Fault,
-                        cause: err.clone(),
+                        cause: short_cause,
                         cause_stack_trace: Some(err),
                     },
                 }),
@@ -163,17 +175,23 @@ async fn check_stuck(
     last_pos_changed_at: std::time::Instant,
     buffering_started_at: Option<std::time::Instant>,
 ) -> bool {
+    if ctx.handle.get_state() != PlaybackState::Playing {
+        return false;
+    }
+
     let elapsed_ms = match buffering_started_at {
         Some(started) => started.elapsed().as_millis() as u64,
         None => last_pos_changed_at.elapsed().as_millis() as u64,
     };
 
-    if elapsed_ms >= ctx.stuck_threshold_ms {
+    let threshold = ctx.stuck_threshold_ms;
+
+    if elapsed_ms >= threshold {
         ctx.session.send_message(&protocol::OutgoingMessage::Event {
             event: Box::new(RustalinkEvent::TrackStuck {
                 guild_id: ctx.guild_id.clone(),
                 track: ctx.track.clone(),
-                threshold_ms: ctx.stuck_threshold_ms,
+                threshold_ms: threshold,
             }),
         });
 
@@ -188,10 +206,9 @@ async fn check_stuck(
                 "position"
             },
             elapsed_ms,
-            ctx.stuck_threshold_ms,
+            threshold,
             buffering_started_at.is_some()
         );
-        ctx.handle.stop();
         return true;
     }
     false

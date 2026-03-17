@@ -58,8 +58,8 @@ pub async fn discover_ip(
                 }
                 let ip = std::str::from_utf8(&client_buf[8..72])
                     .map_err(|e| GatewayError::Discovery(e.to_string()))?
-                    .trim_matches('\0')
-                    .to_string();
+                    .trim_end_matches('\0')
+                    .to_owned();
                 let port = u16::from_be_bytes([client_buf[72], client_buf[73]]);
                 return Ok((ip, port));
             }
@@ -287,13 +287,10 @@ impl VoiceSession {
         pcm: &[i16],
         opus: &mut [u8],
     ) -> Result<(), GatewayError> {
-        let size = match encoder.encode(pcm, opus) {
-            Ok(s) => s,
-            Err(e) => {
-                error!("Opus encode failed: {e}");
-                0
-            }
-        };
+        let size = encoder.encode(pcm, opus).unwrap_or_else(|e| {
+            error!("Opus encode failed: {e}");
+            0
+        });
 
         if size > 0 {
             self.send_raw(&opus[..size]).await?;

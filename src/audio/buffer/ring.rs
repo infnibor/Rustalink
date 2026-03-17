@@ -10,8 +10,7 @@ pub struct RingBuffer {
 
 impl RingBuffer {
     pub fn new(size: usize) -> Self {
-        let pool = get_byte_pool();
-        let mut buf = pool.acquire(size);
+        let mut buf = get_byte_pool().acquire(size);
         buf.resize(size, 0);
         Self {
             buf,
@@ -34,9 +33,15 @@ impl RingBuffer {
         self.size - self.length
     }
 
-    /// Write `chunk` into the buffer.  
-    /// If the buffer is full, the **oldest** data is overwritten.
+    /// Write `chunk` into the buffer.
+    /// If `chunk` is larger than the buffer capacity, only the last `size` bytes are kept.
     pub fn write(&mut self, chunk: &[u8]) {
+        let chunk = if chunk.len() > self.size {
+            &chunk[chunk.len() - self.size..]
+        } else {
+            chunk
+        };
+
         let to_write = chunk.len();
         let available_at_end = self.size - self.write_offset;
 
@@ -68,18 +73,39 @@ impl RingBuffer {
     }
 
     /// Peek at up to `n` bytes without advancing the read pointer.
+    /// Returns a pooled allocation — use `peek_slice` for a zero-copy borrow.
     pub fn peek(&self, n: usize) -> Option<Vec<u8>> {
         let to_read = n.min(self.length);
         if to_read == 0 {
             return None;
         }
 
-        let pool = get_byte_pool();
-        let mut out = pool.acquire(to_read);
+        let mut out = get_byte_pool().acquire(to_read);
         out.resize(to_read, 0);
-
         self.copy_to(&mut out);
         Some(out)
+    }
+
+    /// Zero-copy peek: calls `f` with up to two contiguous byte slices that together
+    /// represent the next `n` readable bytes. Avoids any allocation.
+    pub fn peek_slice<F, R>(&self, n: usize, f: F) -> Option<R>
+    where
+        F: FnOnce(&[u8], &[u8]) -> R,
+    {
+        let to_read = n.min(self.length);
+        if to_read == 0 {
+            return None;
+        }
+        let available_at_end = self.size - self.read_offset;
+        let result = if to_read <= available_at_end {
+            f(&self.buf[self.read_offset..self.read_offset + to_read], &[])
+        } else {
+            f(
+                &self.buf[self.read_offset..],
+                &self.buf[..to_read - available_at_end],
+            )
+        };
+        Some(result)
     }
 
     fn copy_to(&self, out: &mut [u8]) {
@@ -106,20 +132,13 @@ impl RingBuffer {
         self.read_offset = 0;
         self.length = 0;
     }
-
-    pub fn dispose(mut self) {
-        let pool = get_byte_pool();
-        let buf = std::mem::take(&mut self.buf);
-        pool.release(buf);
-    }
 }
 
 impl Drop for RingBuffer {
     fn drop(&mut self) {
         if !self.buf.is_empty() {
-            let pool = get_byte_pool();
             let buf = std::mem::take(&mut self.buf);
-            pool.release(buf);
+            get_byte_pool().release(buf);
         }
     }
 }
@@ -155,7 +174,7 @@ mod tests {
         let mut rb = RingBuffer::new(10);
         rb.write(b"0123456789");
         rb.skip(5);
-        rb.write(b"abcde"); // Wraps around
+        rb.write(b"abcde");
 
         let data = rb.read(10).unwrap();
         assert_eq!(data, b"56789abcde");
@@ -165,7 +184,7 @@ mod tests {
     fn test_ring_buffer_overwrite() {
         let mut rb = RingBuffer::new(5);
         rb.write(b"12345");
-        rb.write(b"67"); // Overwrites "12"
+        rb.write(b"67");
 
         let data = rb.read(5).unwrap();
         assert_eq!(data, b"34567");
@@ -174,9 +193,21 @@ mod tests {
     #[test]
     fn test_ring_buffer_large_write() {
         let mut rb = RingBuffer::new(5);
-        rb.write(b"12345678"); // Writes more than capacity
+        rb.write(b"12345678");
 
         let data = rb.read(5).unwrap();
         assert_eq!(data, b"45678");
+    }
+
+    #[test]
+    fn test_peek_slice_zero_copy() {
+        let mut rb = RingBuffer::new(10);
+        rb.write(b"hello");
+        let result = rb.peek_slice(5, |a, b| {
+            let mut v = a.to_vec();
+            v.extend_from_slice(b);
+            v
+        });
+        assert_eq!(result.unwrap(), b"hello");
     }
 }

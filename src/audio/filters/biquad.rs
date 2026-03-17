@@ -79,10 +79,7 @@ impl BiquadState {
 
         if !output.is_finite() {
             // Reset on NaN/Inf to avoid cascading errors
-            self.x1 = 0.0;
-            self.x2 = 0.0;
-            self.y1 = 0.0;
-            self.y2 = 0.0;
+            self.reset();
             return 0.0;
         }
 

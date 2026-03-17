@@ -3,6 +3,7 @@ use crate::common::types::AudioFormat;
 /// Sniff the container format from the first bytes of arbitrary data.
 ///
 /// Requires at least 4 bytes. Returns `AudioFormat::Unknown` for anything
+/// unrecognised.
 pub fn detect_format(header: &[u8]) -> AudioFormat {
     if header.len() < 4 {
         return AudioFormat::Unknown;
@@ -31,8 +32,14 @@ pub fn detect_format(header: &[u8]) -> AudioFormat {
     if header.starts_with(b"ID3") {
         return AudioFormat::Mp3;
     }
-    if header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 {
-        return AudioFormat::Mp3;
+
+    if header[0] == 0xFF {
+        let b1 = header[1];
+        let is_sync = (b1 & 0xE0) == 0xE0;
+        let layer = (b1 >> 1) & 0x03;
+        if is_sync && layer != 0 {
+            return AudioFormat::Mp3;
+        }
     }
 
     AudioFormat::Unknown
@@ -65,5 +72,20 @@ mod tests {
             detect_format(&[0x00, 0x00, 0x00, 0x00]),
             AudioFormat::Unknown
         );
+    }
+
+    #[test]
+    fn adts_not_mistaken_for_mp3() {
+        // AAC ADTS syncword: 0xFF 0xF1 (MPEG-4, no CRC)
+        let adts = [0xFF, 0xF1, 0x50, 0x80];
+        // Should NOT match as Mp3 — layer bits are 0b00
+        assert_eq!(detect_format(&adts), AudioFormat::Unknown);
+    }
+
+    #[test]
+    fn mp3_sync_word() {
+        // MPEG-1 Layer 3: 0xFF 0xFB
+        let mp3 = [0xFF, 0xFB, 0x90, 0x00];
+        assert_eq!(detect_format(&mp3), AudioFormat::Mp3);
     }
 }

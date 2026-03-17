@@ -9,7 +9,7 @@ use regex::Regex;
 
 use crate::{
     protocol::tracks::LoadResult,
-    sources::plugin::{BoxedTrack, SourcePlugin},
+    sources::{SourcePlugin, playable_track::BoxedTrack},
 };
 
 pub fn path_regex() -> &'static Regex {
