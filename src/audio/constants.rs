@@ -4,14 +4,14 @@ pub const TARGET_SAMPLE_RATE: u32 = 48_000;
 pub const SAMPLE_RATE_F64: f64 = 48_000.0;
 pub const FRAME_SIZE_SAMPLES: usize = 960 * 2;
 pub const MIXER_CHANNELS: usize = 2;
-pub const OPUS_SAMPLE_RATE: u64 = 48_000;
 
 // ── i16 PCM clip boundaries ──────────────────────────────────────────────────
 
 pub const INT16_MAX_F: f32 = 32_767.0;
 pub const INT16_MIN_F: f32 = -32_768.0;
-pub const INT16_MAX_F64: f64 = 32_768.0;
-pub const INV_INT16: f64 = 1.0 / INT16_MAX_F64;
+/// Normalization divisor: i16 range mapped to [-1.0, 1.0].
+pub const INT16_NORM_F64: f64 = 32_768.0;
+pub const INV_INT16: f64 = 1.0 / INT16_NORM_F64;
 
 // ── Codec ────────────────────────────────────────────────────────────────────
 
@@ -49,7 +49,10 @@ pub const HTTP_FETCH_CHUNK_LIMIT: u64 = 2 * 1_024 * 1_024;
 
 // ── Effects ──────────────────────────────────────────────────────────────────
 
-pub const HALF_PI: f32 = std::f32::consts::PI / 2.0;
+pub use std::f32::consts::FRAC_PI_2 as HALF_PI;
+
+/// Sample rate used for Opus ms↔sample conversions (48 kHz as u64).
+pub const OPUS_SAMPLE_RATE: u64 = TARGET_SAMPLE_RATE as u64;
 
 // ── Route Planner ────────────────────────────────────────────────────────────
 
