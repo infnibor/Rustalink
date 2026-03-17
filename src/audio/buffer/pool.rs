@@ -1,10 +1,12 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
 use crate::audio::constants::{MAX_BUCKET_ENTRIES, MAX_POOL_BYTES, POOL_IDLE_CLEAR_SECS};
+
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 
 struct PoolInner {
     buckets: HashMap<usize, Vec<Vec<u8>>>,
@@ -28,6 +30,10 @@ impl PoolInner {
         size.max(1024).next_power_of_two()
     }
 
+    fn needs_cleanup(&self) -> bool {
+        self.total_bytes > 0 && self.last_cleanup.elapsed() >= CLEANUP_INTERVAL
+    }
+
     fn acquire(&mut self, size: usize) -> Vec<u8> {
         self.last_activity = Instant::now();
         let aligned = Self::aligned_size(size);
@@ -47,7 +53,6 @@ impl PoolInner {
         self.last_activity = Instant::now();
         let size = buf.capacity();
 
-        // Only pool buffers in the 1 KB – 10 MB range.
         if !(1024..=10 * 1024 * 1024).contains(&size) {
             return;
         }
@@ -66,14 +71,6 @@ impl PoolInner {
     }
 
     fn cleanup(&mut self) {
-        if self.total_bytes == 0 {
-            return;
-        }
-
-        // Rate-limit cleanup checks to every 30 seconds.
-        if self.last_cleanup.elapsed() < Duration::from_secs(30) {
-            return;
-        }
         self.last_cleanup = Instant::now();
 
         let is_idle = self.last_activity.elapsed() >= Duration::from_secs(POOL_IDLE_CLEAR_SECS);
@@ -99,13 +96,14 @@ impl BufferPool {
 
     pub fn acquire(&self, size: usize) -> Vec<u8> {
         let mut g = self.inner.lock().unwrap();
-        g.cleanup();
+        if g.needs_cleanup() {
+            g.cleanup();
+        }
         g.acquire(size)
     }
 
     pub fn release(&self, buf: Vec<u8>) {
-        let mut g = self.inner.lock().unwrap();
-        g.release(buf);
+        self.inner.lock().unwrap().release(buf);
     }
 
     pub fn stats(&self) -> PoolStats {
@@ -125,10 +123,8 @@ pub struct PoolStats {
     pub entries: usize,
 }
 
-static GLOBAL_BYTE_POOL: OnceLock<Arc<BufferPool>> = OnceLock::new();
+static GLOBAL_BYTE_POOL: OnceLock<BufferPool> = OnceLock::new();
 
-pub fn get_byte_pool() -> Arc<BufferPool> {
-    GLOBAL_BYTE_POOL
-        .get_or_init(|| Arc::new(BufferPool::new()))
-        .clone()
+pub fn get_byte_pool() -> &'static BufferPool {
+    GLOBAL_BYTE_POOL.get_or_init(BufferPool::new)
 }
