@@ -402,8 +402,13 @@ async fn prefetch_loop(
     loop {
         enum Action {
             Stop,
-            Seek { batch: Vec<Resource> },
-            Fetch { batch: Vec<Resource>, seg_idx: usize },
+            Seek {
+                batch: Vec<Resource>,
+            },
+            Fetch {
+                batch: Vec<Resource>,
+                seg_idx: usize,
+            },
             Eos,
         }
 
@@ -479,7 +484,8 @@ async fn prefetch_loop(
                         break;
                     }
 
-                    if let Ok(resolved) = resolve_resource_static(res, &cipher_manager, &player_url).await
+                    if let Ok(resolved) =
+                        resolve_resource_static(res, &cipher_manager, &player_url).await
                         && let Err(e) = fetch_and_demux_into(&client, &resolved, &mut tmp_buf).await
                     {
                         tracing::warn!("HLS prefetch: segment fetch error: {}", e);

@@ -372,8 +372,14 @@ async fn prefetch_loop(
     loop {
         enum Action {
             Stop,
-            Seek { target_index: usize, batch: Vec<Resource> },
-            Fetch { batch: Vec<Resource>, current_idx: usize },
+            Seek {
+                target_index: usize,
+                batch: Vec<Resource>,
+            },
+            Fetch {
+                batch: Vec<Resource>,
+                current_idx: usize,
+            },
             Eos,
         }
 
@@ -393,7 +399,10 @@ async fn prefetch_loop(
                     state.pending = all_segments[target_index..].to_vec();
                     let count = if !state.pending.is_empty() { 1 } else { 0 };
                     let batch = state.pending.drain(..count).collect();
-                    Action::Seek { target_index, batch }
+                    Action::Seek {
+                        target_index,
+                        batch,
+                    }
                 }
                 PrefetchCommand::Continue => {
                     if state.pending.is_empty() {
@@ -415,7 +424,10 @@ async fn prefetch_loop(
             Action::Stop => return,
             Action::Eos => continue,
 
-            Action::Seek { target_index, batch } => {
+            Action::Seek {
+                target_index,
+                batch,
+            } => {
                 let mut tmp_buf = Vec::new();
                 for res in &batch {
                     debug!(
