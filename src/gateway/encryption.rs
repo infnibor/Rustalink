@@ -221,7 +221,11 @@ impl DaveHandler {
     fn process_handshake_message(&mut self, data: &[u8], is_welcome: bool) -> AnyResult<u16> {
         let tag = if is_welcome { "welcome" } else { "commit" };
         if data.len() < 2 {
-            let msg = if is_welcome { "DAVE welcome" } else { "DAVE commit" };
+            let msg = if is_welcome {
+                "DAVE welcome"
+            } else {
+                "DAVE commit"
+            };
             return Err(short_payload_err(msg));
         }
 

@@ -1,6 +1,7 @@
+use std::sync::LazyLock;
+
 use async_trait::async_trait;
 use regex::Regex;
-use std::sync::LazyLock;
 
 use super::{LyricsProvider, utils};
 use crate::protocol::{

@@ -1,7 +1,8 @@
+use std::sync::LazyLock;
+
 use async_trait::async_trait;
 use regex::Regex;
 use serde_json::Value;
-use std::sync::LazyLock;
 
 use super::{LyricsProvider, utils};
 use crate::protocol::{
@@ -9,14 +10,12 @@ use crate::protocol::{
     tracks::TrackInfo,
 };
 
-static OMQ_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"_omq\.push\(\['ui/lyric',\s*(\{[\s\S]*?\})\s*,"#).unwrap()
-});
+static OMQ_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"_omq\.push\(\['ui/lyric',\s*(\{[\s\S]*?\})\s*,"#).unwrap());
 static LYRIC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)<div class="lyric-original[^>]*">([\s\S]*?)</div>"#).unwrap()
 });
-static LYRIC_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"<[^>]*>"#).unwrap());
+static LYRIC_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<[^>]*>"#).unwrap());
 
 pub struct LetrasMusProvider {
     client: reqwest::Client,

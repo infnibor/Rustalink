@@ -29,7 +29,7 @@ pub fn clean_text(text: &str) -> String {
     use std::borrow::Cow;
     let mut result: Cow<str> = Cow::Borrowed(text);
     for re in CLEAN_PATTERNS.iter() {
-        let replaced = re.replace_all(&*result, "");
+        let replaced = re.replace_all(&result, "");
         if let Cow::Owned(s) = replaced {
             result = Cow::Owned(s);
         }
