@@ -121,7 +121,7 @@ async fn handle_playback_stopped(ctx: &MonitorCtx) {
             {
                 err.clone()
             } else {
-                "Something went wrong when decoding the track.".to_string()
+                "Something went wrong when decoding the track.".to_owned()
             };
 
             let short_cause = crate::common::utils::shorten_error_cause(&err);

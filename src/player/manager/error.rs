@@ -18,7 +18,7 @@ pub async fn send_load_failed(player: &PlayerContext, session: &Session, message
         if message.contains("This video ") || message.contains("All clients failed to resolve") {
             message.clone()
         } else {
-            "Something broke when playing the track.".to_string()
+            "Something broke when playing the track.".to_owned()
         };
 
     let short_cause = crate::common::utils::shorten_error_cause(&message);
