@@ -57,16 +57,10 @@ impl CrossfadeController {
     /// Pull as much data as possible from the next track's receiver into the buffer.
     pub fn fill_buffer(&mut self) {
         let Some(rx) = &self.next_rx else { return };
-        let Some(ring) = &mut self.ring_buffer else {
-            return;
-        };
+        let Some(ring) = &mut self.ring_buffer else { return };
 
-        while !rx.is_empty() {
-            if let Ok(pooled) = rx.try_recv() {
-                ring.write(crate::audio::buffer::as_byte_slice(&pooled));
-            } else {
-                break;
-            }
+        while let Ok(pooled) = rx.try_recv() {
+            ring.write(crate::audio::buffer::as_byte_slice(&pooled));
         }
     }
 
@@ -134,8 +128,8 @@ impl CrossfadeController {
         let t_start = (elapsed / duration).min(1.0);
         let t_end = ((elapsed + chunk_ms) / duration).min(1.0);
 
-        let (out_start, in_start) = self.fade_gains(t_start, curve);
-        let (out_end, in_end) = self.fade_gains(t_end, curve);
+        let (out_start, in_start) = fade_gains(t_start, curve);
+        let (out_end, in_end) = fade_gains(t_end, curve);
 
         let step_out = if sample_count > 1 {
             (out_end - out_start) / (sample_count - 1) as f32
@@ -158,26 +152,24 @@ impl CrossfadeController {
             g_in += step_in;
         }
 
-        let finished = if let Some(state) = &mut self.active_fade {
-            state.elapsed_ms += chunk_ms;
-            state.elapsed_ms >= state.duration_ms as f32
-        } else {
-            false
-        };
+        let state = self.active_fade.as_mut().unwrap();
+        state.elapsed_ms += chunk_ms;
+        let finished = state.elapsed_ms >= state.duration_ms as f32;
         if finished {
             self.active_fade = None;
         }
         finished
     }
 
-    fn fade_gains(&self, t: f32, curve: FadeCurve) -> (f32, f32) {
-        let t = t.clamp(0.0, 1.0);
-        match curve {
-            FadeCurve::Linear => (1.0 - t, t),
-            FadeCurve::Sinusoidal => {
-                // Constant power: cos for out, sin for in
-                ((t * HALF_PI).cos(), (t * HALF_PI).sin())
-            }
+}
+
+fn fade_gains(t: f32, curve: FadeCurve) -> (f32, f32) {
+    let t = t.clamp(0.0, 1.0);
+    match curve {
+        FadeCurve::Linear => (1.0 - t, t),
+        FadeCurve::Sinusoidal => {
+            // Constant power: cos for out, sin for in
+            ((t * HALF_PI).cos(), (t * HALF_PI).sin())
         }
     }
 }
