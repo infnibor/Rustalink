@@ -296,7 +296,7 @@ impl<'a> SessionState<'a> {
                 .iter()
                 .find(|&&p| modes.iter().any(|m| m.as_str() == Some(p)))
             {
-                self.selected_mode = m.to_string();
+                self.selected_mode = (*m).to_owned();
             }
         }
 

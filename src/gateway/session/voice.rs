@@ -58,8 +58,8 @@ pub async fn discover_ip(
                 }
                 let ip = std::str::from_utf8(&client_buf[8..72])
                     .map_err(|e| GatewayError::Discovery(e.to_string()))?
-                    .trim_matches('\0')
-                    .to_string();
+                    .trim_end_matches('\0')
+                    .to_owned();
                 let port = u16::from_be_bytes([client_buf[72], client_buf[73]]);
                 return Ok((ip, port));
             }

@@ -277,7 +277,7 @@ impl VoiceGateway {
         msg: Message,
     ) -> Option<SessionOutcome> {
         match msg {
-            Message::Text(text) => state.handle_text(text.to_string()).await,
+            Message::Text(text) => state.handle_text(text.into()).await,
             Message::Binary(bin) => {
                 state.handle_binary(bin.to_vec()).await;
                 None
