@@ -11,30 +11,32 @@ fn gain_to_db(gain: f32) -> f32 {
 pub struct CompressorFilter {
     threshold: f32,
     ratio: f32,
-    attack: f32,
-    release: f32,
     makeup_gain: f32,
 
     envelope: f32,
+
+    // Precomputed per-parameter coefficients (recomputed only on update).
+    attack_coef: f32,
+    release_coef: f32,
 }
 
 impl CompressorFilter {
     pub fn new(threshold: f32, ratio: f32, attack: f32, release: f32, makeup_gain: f32) -> Self {
+        let attack = attack.max(0.001);
+        let release = release.max(0.01);
         Self {
             threshold,
             ratio: ratio.max(1.0),
-            attack: attack.max(0.001),
-            release: release.max(0.01),
             makeup_gain,
             envelope: 0.0,
+            attack_coef: (-1.0 / (attack * 48000.0)).exp(),
+            release_coef: (-1.0 / (release * 48000.0)).exp(),
         }
     }
 }
 
 impl AudioFilter for CompressorFilter {
     fn process(&mut self, samples: &mut [i16]) {
-        let attack_coef = (-1.0 / (self.attack * 48000.0)).exp();
-        let release_coef = (-1.0 / (self.release * 48000.0)).exp();
         let makeup_gain = db_to_gain(self.makeup_gain);
 
         for chunk in samples.chunks_exact_mut(2) {
@@ -44,9 +46,9 @@ impl AudioFilter for CompressorFilter {
             let abs_sample = left_in.abs().max(right_in.abs());
 
             if abs_sample > self.envelope {
-                self.envelope = attack_coef * (self.envelope - abs_sample) + abs_sample;
+                self.envelope = self.attack_coef * (self.envelope - abs_sample) + abs_sample;
             } else {
-                self.envelope = release_coef * (self.envelope - abs_sample) + abs_sample;
+                self.envelope = self.release_coef * (self.envelope - abs_sample) + abs_sample;
             }
 
             let envelope_db = gain_to_db(self.envelope);

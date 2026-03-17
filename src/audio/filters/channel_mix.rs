@@ -29,14 +29,15 @@ impl AudioFilter for ChannelMixFilter {
 
         for frame in 0..num_frames {
             let offset = frame * 2;
-            let left = samples[offset] as f64;
-            let right = samples[offset + 1] as f64;
+            let left = samples[offset] as f32;
+            let right = samples[offset + 1] as f32;
 
-            let new_left = left * self.left_to_left as f64 + right * self.right_to_left as f64;
-            let new_right = left * self.left_to_right as f64 + right * self.right_to_right as f64;
+            let new_left = left * self.left_to_left + right * self.right_to_left;
+            let new_right = left * self.left_to_right + right * self.right_to_right;
 
-            samples[offset] = (new_left as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-            samples[offset + 1] = (new_right as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            // Clamp in f32 before truncating to i16 to avoid overflow.
+            samples[offset] = new_left.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+            samples[offset + 1] = new_right.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
     }
 

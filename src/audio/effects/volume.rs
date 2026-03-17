@@ -3,8 +3,10 @@
 //!
 //! Soft limiter prevents clipping.
 
-use crate::audio::constants::{INT16_MAX_F, INT16_MIN_F};
-use crate::audio::effects::fade::FadeCurve;
+use crate::audio::{
+    constants::{INT16_MAX_F, INT16_MIN_F},
+    effects::fade::FadeCurve,
+};
 
 /// Per-frame volume processor with soft limiter and sinusoidal fade support.
 pub struct VolumeEffect {

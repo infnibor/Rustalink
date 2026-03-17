@@ -12,7 +12,7 @@ pub enum FadeCurve {
 }
 
 impl FadeCurve {
-    fn value(self, t: f32) -> f32 {
+    pub fn value(self, t: f32) -> f32 {
         match self {
             FadeCurve::Linear => t,
             FadeCurve::Sinusoidal => 0.5 * (1.0 - (t * std::f32::consts::PI).cos()),
