@@ -3,15 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use super::{
-    YouTubeClient,
-    common::{extract_thumbnail, is_duration, parse_duration},
-};
+use super::{YouTubeClient, core};
 use crate::{
     common::types::AnyResult,
     protocol::tracks::{Track, TrackInfo},
     sources::youtube::{
-        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager,
+        clients::common::{ClientConfig, extract_thumbnail, is_duration, parse_duration},
+        oauth::YouTubeOAuth,
     },
 };
 
@@ -31,7 +30,7 @@ impl MusicAndroidClient {
         Self { http }
     }
 
-    fn config(&self) -> ClientConfig<'_> {
+    fn config(&self) -> ClientConfig<'static> {
         ClientConfig {
             client_name: CLIENT_NAME,
             client_version: CLIENT_VERSION,
@@ -45,33 +44,6 @@ impl MusicAndroidClient {
             ..Default::default()
         }
     }
-
-    async fn player_request(
-        &self,
-        video_id: &str,
-        visitor_data: Option<&str>,
-        signature_timestamp: Option<u32>,
-        _oauth: &Arc<YouTubeOAuth>,
-    ) -> AnyResult<Value> {
-        crate::sources::youtube::clients::common::make_player_request(
-            crate::sources::youtube::clients::common::PlayerRequestOptions {
-                http: &self.http,
-                config: &self.config(),
-                video_id,
-                params: None,
-                visitor_data,
-                signature_timestamp,
-                auth_header: None,
-                referer: None,
-                origin: Some(INNERTUBE_API),
-                po_token: None,
-                encrypted_host_flags: None,
-                attestation_request: None,
-                serialized_third_party_embed_config: false,
-            },
-        )
-        .await
-    }
 }
 
 #[async_trait]
@@ -79,12 +51,15 @@ impl YouTubeClient for MusicAndroidClient {
     fn name(&self) -> &str {
         "MusicAndroid"
     }
+
     fn client_name(&self) -> &str {
         CLIENT_NAME
     }
+
     fn client_version(&self) -> &str {
         CLIENT_VERSION
     }
+
     fn user_agent(&self) -> &str {
         USER_AGENT
     }
@@ -97,13 +72,9 @@ impl YouTubeClient for MusicAndroidClient {
         &self,
         query: &str,
         context: &Value,
-        oauth: Arc<YouTubeOAuth>,
+        _oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Vec<Track>> {
-        let visitor_data = context
-            .get("client")
-            .and_then(|c| c.get("visitorData"))
-            .and_then(|v| v.as_str())
-            .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
+        let visitor_data = core::extract_visitor_data(context);
 
         let body = json!({
             "context": self.config().build_context(None),
@@ -124,8 +95,6 @@ impl YouTubeClient for MusicAndroidClient {
         }
 
         let req = req.json(&body);
-
-        let _ = oauth;
 
         let res = req.send().await?;
         if !res.status().is_success() {
@@ -388,64 +357,19 @@ impl YouTubeClient for MusicAndroidClient {
         context: &Value,
         oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<Track>> {
-        let visitor_data = context
-            .get("client")
-            .and_then(|c| c.get("visitorData"))
-            .and_then(|v| v.as_str())
-            .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
-        let body = self
-            .player_request(track_id, visitor_data, None, &oauth)
-            .await?;
-
-        if let Err(e) = crate::sources::youtube::utils::parse_playability_status(&body) {
-            tracing::warn!(
-                "{} player: video {} not playable: {}",
-                self.name(),
+        core::standard_get_track_info(
+            self,
+            core::StandardPlayerOptions {
+                http: &self.http,
                 track_id,
-                e
-            );
-            return Err(e.into());
-        }
-
-        let playability = body
-            .get("playabilityStatus")
-            .and_then(|p| p.get("status"))
-            .and_then(|s| s.as_str())
-            .unwrap_or("UNKNOWN");
-        if playability != "OK" {
-            return Ok(None);
-        }
-
-        let vd = body.get("videoDetails");
-        let title = vd
-            .and_then(|v| v.get("title"))
-            .and_then(|t| t.as_str())
-            .unwrap_or("Unknown Title");
-        let author = vd
-            .and_then(|v| v.get("author"))
-            .and_then(|a| a.as_str())
-            .unwrap_or("Unknown Artist");
-        let length_secs = vd
-            .and_then(|v| v.get("lengthSeconds"))
-            .and_then(|l| l.as_str())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-
-        let info = TrackInfo {
-            identifier: track_id.to_string(),
-            is_seekable: true,
-            title: title.to_string(),
-            author: author.to_string(),
-            length: length_secs * 1000,
-            is_stream: false,
-            uri: Some(format!("https://music.youtube.com/watch?v={}", track_id)),
-            source_name: "youtube".to_string(),
-            isrc: None,
-            artwork_url: extract_thumbnail(&vd.cloned().unwrap_or(Value::Null), Some(track_id)),
-            position: 0,
-        };
-
-        Ok(Some(Track::new(info)))
+                context,
+                oauth,
+                signature_timestamp: None,
+                encrypted_host_flags: None,
+                config_builder: || self.config(),
+            },
+        )
+        .await
     }
 
     async fn get_playlist(
@@ -454,11 +378,7 @@ impl YouTubeClient for MusicAndroidClient {
         context: &Value,
         oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<(Vec<Track>, String)>> {
-        let visitor_data = context
-            .get("client")
-            .and_then(|c| c.get("visitorData"))
-            .and_then(|v| v.as_str())
-            .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
+        let visitor_data = core::extract_visitor_data(context);
 
         let body = json!({
             "context": self.config().build_context(visitor_data),
@@ -526,23 +446,52 @@ impl YouTubeClient for MusicAndroidClient {
 
     async fn get_track_url(
         &self,
-        _track_id: &str,
-        _context: &Value,
-        _cipher_manager: Arc<YouTubeCipherManager>,
-        _oauth: Arc<YouTubeOAuth>,
+        track_id: &str,
+        context: &Value,
+        cipher_manager: Arc<YouTubeCipherManager>,
+        oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<String>> {
-        tracing::debug!("{} client does not provide direct track URLs", self.name());
-        Ok(None)
+        let signature_timestamp = cipher_manager.get_signature_timestamp().await.ok();
+        core::standard_get_track_url(
+            self,
+            core::StandardUrlOptions {
+                http: &self.http,
+                track_id,
+                context,
+                cipher_manager,
+                oauth,
+                signature_timestamp,
+                encrypted_host_flags: None,
+                config_builder: || self.config(),
+            },
+        )
+        .await
     }
 
     async fn get_player_body(
         &self,
         track_id: &str,
         visitor_data: Option<&str>,
-        oauth: Arc<YouTubeOAuth>,
+        _oauth: Arc<YouTubeOAuth>,
     ) -> Option<serde_json::Value> {
-        self.player_request(track_id, visitor_data, None, &oauth)
-            .await
-            .ok()
+        crate::sources::youtube::clients::common::make_player_request(
+            crate::sources::youtube::clients::common::PlayerRequestOptions {
+                http: &self.http,
+                config: &self.config(),
+                video_id: track_id,
+                params: None,
+                visitor_data,
+                signature_timestamp: None,
+                auth_header: None,
+                referer: None,
+                origin: Some(INNERTUBE_API),
+                po_token: None,
+                encrypted_host_flags: None,
+                attestation_request: None,
+                serialized_third_party_embed_config: false,
+            },
+        )
+        .await
+        .ok()
     }
 }

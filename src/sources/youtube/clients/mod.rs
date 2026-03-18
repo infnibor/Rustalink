@@ -12,8 +12,10 @@ use crate::{
 pub mod android;
 pub mod android_vr;
 pub mod common;
+pub mod core;
 pub mod ios;
 pub mod music_android;
+pub mod mweb;
 pub mod tv;
 pub mod tv_cast;
 pub mod tv_embedded;
@@ -30,6 +32,15 @@ pub trait YouTubeClient: Send + Sync {
     fn client_name(&self) -> &str;
     fn client_version(&self) -> &str;
     fn user_agent(&self) -> &str;
+    fn supports_oauth(&self) -> bool {
+        false
+    }
+    fn is_embedded(&self) -> bool {
+        false
+    }
+    fn requires_embed_workaround(&self) -> bool {
+        !self.supports_oauth()
+    }
     fn can_handle_request(&self, _identifier: &str) -> bool {
         true
     }
