@@ -22,11 +22,12 @@ use tracing::info;
 async fn main() -> AnyResult<()> {
     let config = rustalink::config::AppConfig::load().await?;
 
+    let default_logging = rustalink::config::LoggingConfig::default();
     rustalink::common::logger::init(
         config
             .logging
             .as_ref()
-            .unwrap_or(&rustalink::config::LoggingConfig::default()),
+            .unwrap_or(&default_logging),
     );
 
     rustalink::common::banner::print_banner(&rustalink::common::banner::BannerInfo::default());
