@@ -36,6 +36,7 @@ export default defineConfig({
             { label: 'Introduction', slug: 'introduction' },
             { label: 'Installation', slug: 'installation' },
             { label: 'Configuration', slug: 'configuration' },
+            { label: 'Sources', slug: 'sources' },
             { label: 'Docker', slug: 'docker' },
             { label: 'Pterodactyl', slug: 'pterodactyl' },
             { label: 'Troubleshooting', slug: 'troubleshooting' },
