@@ -15,7 +15,6 @@ pub mod utils;
 
 pub struct YandexMusicSource {
     client: Arc<reqwest::Client>,
-    #[allow(dead_code)]
     access_token: String,
     url_pattern: Regex,
     playlist_pattern: Regex,

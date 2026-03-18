@@ -61,8 +61,8 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
 
     let identifier = track_info
         .uri
-        .clone()
-        .unwrap_or_else(|| track_info.identifier.clone());
+        .as_ref()
+        .unwrap_or(&track_info.identifier);
 
     let playable = match timeout(
         Duration::from_secs(30),
@@ -146,7 +146,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
     spawn_lyrics_fetch(
         player.lyrics_subscribed.clone(),
         player.lyrics_data.clone(),
-        track_info.clone(),
+        track_info,
         config.lyrics_manager,
         config.session.clone(),
         player.guild_id.clone(),

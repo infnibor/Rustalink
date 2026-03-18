@@ -9,11 +9,14 @@ use axum::{
 };
 use prometheus::{Encoder, Gauge, Opts, Registry, TextEncoder};
 use tokio::time::interval;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::server::AppState;
 
 const NAMESPACE: &str = "lavalink";
+
+static CANCEL_TOKEN: LazyLock<CancellationToken> = LazyLock::new(CancellationToken::new);
 
 struct NodeMetrics {
     players: Gauge,
@@ -116,11 +119,19 @@ pub fn init(state: Arc<AppState>) {
     // Ensure metrics are initialized
     LazyLock::force(&METRICS);
 
+    let token = CANCEL_TOKEN.clone();
     tokio::spawn(async move {
         let mut ticker = interval(Duration::from_secs(state.config.server.stats_interval));
         loop {
-            ticker.tick().await;
-            update_metrics(&state);
+            tokio::select! {
+                _ = token.cancelled() => {
+                    info!("Prometheus metrics observer shutting down");
+                    break;
+                }
+                _ = ticker.tick() => {
+                    update_metrics(&state);
+                }
+            }
         }
     });
 }
