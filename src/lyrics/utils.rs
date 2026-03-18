@@ -22,8 +22,9 @@ static CLEAN_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     .collect()
 });
 
-static LRC_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"\[(\d+):(\d{2})(?:\.(\d{2,3}))?\]"#).expect("invalid LRC_REGEX pattern"));
+static LRC_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\[(\d+):(\d{2})(?:\.(\d{2,3}))?\]"#).expect("invalid LRC_REGEX pattern")
+});
 
 pub fn clean_text(text: &str) -> String {
     use std::borrow::Cow;
@@ -41,7 +42,7 @@ pub fn unescape_html(text: &str) -> String {
     if !text.contains('&') {
         return text.to_owned();
     }
-    
+
     text.replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")

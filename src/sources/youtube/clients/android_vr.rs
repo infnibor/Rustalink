@@ -4,14 +4,11 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::{YouTubeClient, core};
-
 use crate::{
     common::types::AnyResult,
     protocol::tracks::Track,
     sources::youtube::{
-        cipher::YouTubeCipherManager,
-        clients::common::ClientConfig,
-        oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
     },
 };
 

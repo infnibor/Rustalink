@@ -101,7 +101,10 @@ impl DaveHandler {
             self.session = Some(session);
         }
 
-        let session = self.session.as_mut().ok_or_else(|| map_boxed_err("DAVE session initialization failed"))?;
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| map_boxed_err("DAVE session initialization failed"))?;
 
         self.protocol_version = version;
         self.external_sender_set = false;

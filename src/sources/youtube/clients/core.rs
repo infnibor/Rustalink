@@ -4,7 +4,10 @@ use serde_json::{Value, json};
 
 use super::{
     YouTubeClient,
-    common::{INNERTUBE_API, PlayerRequestOptions, make_player_request, resolve_format_url, select_best_audio_format},
+    common::{
+        INNERTUBE_API, PlayerRequestOptions, make_player_request, resolve_format_url,
+        select_best_audio_format,
+    },
 };
 use crate::{
     common::types::AnyResult,
@@ -95,7 +98,10 @@ pub async fn standard_search<T: YouTubeClient>(
                             .or_else(|| section.get("reelShelfRenderer"));
                         shelf.and_then(|s| {
                             s.get("content")
-                                .and_then(|c| c.get("verticalListRenderer").or_else(|| c.get("horizontalListRenderer")))
+                                .and_then(|c| {
+                                    c.get("verticalListRenderer")
+                                        .or_else(|| c.get("horizontalListRenderer"))
+                                })
                                 .and_then(|v| v.get("items"))
                                 .or_else(|| {
                                     s.get("content")
@@ -139,10 +145,16 @@ pub async fn standard_search<T: YouTubeClient>(
                 }
             }
         } else {
-            tracing::debug!("Search: No standard sections found in response contents. keys: {:?}", contents.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+            tracing::debug!(
+                "Search: No standard sections found in response contents. keys: {:?}",
+                contents.as_object().map(|o| o.keys().collect::<Vec<_>>())
+            );
         }
     } else {
-        tracing::debug!("Search: No contents found in response. keys: {:?}", response.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+        tracing::debug!(
+            "Search: No contents found in response. keys: {:?}",
+            response.as_object().map(|o| o.keys().collect::<Vec<_>>())
+        );
     }
 
     Ok(tracks)
@@ -161,7 +173,10 @@ where
     pub config_builder: F,
 }
 
-pub async fn standard_get_track_info<T, F>(client: &T, opts: StandardPlayerOptions<'_, F>) -> AnyResult<Option<Track>>
+pub async fn standard_get_track_info<T, F>(
+    client: &T,
+    opts: StandardPlayerOptions<'_, F>,
+) -> AnyResult<Option<Track>>
 where
     T: YouTubeClient,
     F: FnOnce() -> ClientConfig<'static>,
@@ -207,7 +222,10 @@ where
     pub config_builder: F,
 }
 
-pub async fn standard_get_track_url<T, F>(client: &T, opts: StandardUrlOptions<'_, F>) -> AnyResult<Option<String>>
+pub async fn standard_get_track_url<T, F>(
+    client: &T,
+    opts: StandardUrlOptions<'_, F>,
+) -> AnyResult<Option<String>>
 where
     T: YouTubeClient,
     F: FnOnce() -> ClientConfig<'static>,

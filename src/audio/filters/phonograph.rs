@@ -5,14 +5,12 @@ use super::{
     lfo::Lfo,
 };
 use crate::audio::constants::{
+    PHONOGRAPH_MAX_DELAY_MS, PHONOGRAPH_R1_SIZE, PHONOGRAPH_R2_SIZE, PHONOGRAPH_R3_SIZE,
     TARGET_SAMPLE_RATE,
-    PHONOGRAPH_MAX_DELAY_MS,
-    PHONOGRAPH_R1_SIZE,
-    PHONOGRAPH_R2_SIZE,
-    PHONOGRAPH_R3_SIZE,
 };
 
-const BUFFER_SIZE: usize = ((TARGET_SAMPLE_RATE as f32 * PHONOGRAPH_MAX_DELAY_MS) / 1000.0) as usize;
+const BUFFER_SIZE: usize =
+    ((TARGET_SAMPLE_RATE as f32 * PHONOGRAPH_MAX_DELAY_MS) / 1000.0) as usize;
 
 struct XorShift32 {
     s: u32,

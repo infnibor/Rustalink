@@ -8,9 +8,7 @@ use crate::{
     common::types::AnyResult,
     protocol::tracks::Track,
     sources::youtube::{
-        cipher::YouTubeCipherManager,
-        clients::common::ClientConfig,
-        oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
     },
 };
 

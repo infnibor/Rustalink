@@ -8,9 +8,7 @@ use crate::{
     common::types::AnyResult,
     protocol::tracks::Track,
     sources::youtube::{
-        cipher::YouTubeCipherManager,
-        clients::common::ClientConfig,
-        oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
     },
 };
 
@@ -24,9 +22,7 @@ pub struct TvSimplyClient {
 
 impl TvSimplyClient {
     pub fn new(http: Arc<reqwest::Client>) -> Self {
-        Self {
-            http,
-        }
+        Self { http }
     }
 
     fn config(&self) -> ClientConfig<'static> {
@@ -111,7 +107,10 @@ impl YouTubeClient for TvSimplyClient {
         context: &Value,
         oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<(Vec<Track>, String)>> {
-        core::standard_get_playlist(self, &self.http, playlist_id, context, oauth, || self.config()).await
+        core::standard_get_playlist(self, &self.http, playlist_id, context, oauth, || {
+            self.config()
+        })
+        .await
     }
 
     async fn resolve_url(
@@ -233,6 +232,9 @@ mod get_track_tests {
             .get_player_body("3Z_x7vBqr6E", None, Arc::new(YouTubeOAuth::new(vec![])))
             .await;
         assert!(body.is_some());
-        println!("Body: {}", serde_json::to_string_pretty(&body.unwrap()).unwrap());
+        println!(
+            "Body: {}",
+            serde_json::to_string_pretty(&body.unwrap()).unwrap()
+        );
     }
 }

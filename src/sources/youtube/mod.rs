@@ -27,11 +27,10 @@ pub mod track;
 use cipher::YouTubeCipherManager;
 use clients::{
     YouTubeClient, android::AndroidClient, android_vr::AndroidVrClient, ios::IosClient,
-    music_android::MusicAndroidClient, tv::TvClient, tv_cast::TvCastClient,
+    music_android::MusicAndroidClient, mweb::MWebClient, tv::TvClient, tv_cast::TvCastClient,
     tv_embedded::TvEmbeddedClient, tv_simply::TvSimplyClient, tv_unplugged::TvUnpluggedClient,
     web::WebClient, web_embedded::WebEmbeddedClient, web_parent_tools::WebParentToolsClient,
     web_remix::WebRemixClient,
-    mweb::MWebClient,
 };
 use oauth::YouTubeOAuth;
 
@@ -109,12 +108,8 @@ impl YouTubeSource {
                     cipher_url.clone(),
                     cipher_token.clone(),
                 ))),
-                "WEB_REMIX" | "REMIX" => {
-                    Some(Arc::new(WebRemixClient::new(http.clone())))
-                }
-                "MWEB" | "MUSIC_WEB" => {
-                    Some(Arc::new(MWebClient::new(http.clone())))
-                }
+                "WEB_REMIX" | "REMIX" => Some(Arc::new(WebRemixClient::new(http.clone()))),
+                "MWEB" | "MUSIC_WEB" => Some(Arc::new(MWebClient::new(http.clone()))),
                 "ANDROID" => Some(Arc::new(AndroidClient::new(http.clone()))),
                 "IOS" => Some(Arc::new(IosClient::new(http.clone()))),
                 "TV" | "TVHTML5" => Some(Arc::new(TvClient::new(http.clone()))),
@@ -122,12 +117,10 @@ impl YouTubeSource {
                 "TVHTML5_SIMPLY_EMBEDDED_PLAYER" | "TV_EMBEDDED" => {
                     Some(Arc::new(TvEmbeddedClient::new(http.clone())))
                 }
-                "TVHTML5_SIMPLY" | "TV_SIMPLY" => Some(Arc::new(TvSimplyClient::new(
-                    http.clone(),
-                ))),
-                "TVHTML5_UNPLUGGED" | "TV_UNPLUGGED" => Some(Arc::new(TvUnpluggedClient::new(
-                    http.clone(),
-                ))),
+                "TVHTML5_SIMPLY" | "TV_SIMPLY" => Some(Arc::new(TvSimplyClient::new(http.clone()))),
+                "TVHTML5_UNPLUGGED" | "TV_UNPLUGGED" => {
+                    Some(Arc::new(TvUnpluggedClient::new(http.clone())))
+                }
                 "MUSIC" | "MUSIC_ANDROID" | "ANDROID_MUSIC" => {
                     Some(Arc::new(MusicAndroidClient::new(http.clone())))
                 }
@@ -156,8 +149,14 @@ impl YouTubeSource {
             search_clients.push(Arc::new(WebClient::new(http.clone())));
         }
 
-        let search_client_names: Vec<String> = search_clients.iter().map(|c| c.name().to_string()).collect();
-        tracing::debug!("YouTube Search Clients initialized: {:?}", search_client_names);
+        let search_client_names: Vec<String> = search_clients
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect();
+        tracing::debug!(
+            "YouTube Search Clients initialized: {:?}",
+            search_client_names
+        );
 
         let mut playback_clients = Vec::new();
         for name in &config.clients.playback {
@@ -500,7 +499,10 @@ impl YouTubeSource {
         if prefer_music {
             let mut music_clients: Vec<&Arc<dyn YouTubeClient>> = Vec::new();
             let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-            tracing::debug!("Search: prefer_music=true. search_clients count: {}", self.search_clients.len());
+            tracing::debug!(
+                "Search: prefer_music=true. search_clients count: {}",
+                self.search_clients.len()
+            );
 
             for c in &self.music_search_clients {
                 if seen.insert(c.name()) {
@@ -574,10 +576,8 @@ impl YouTubeSource {
             }
         }
 
-        let tried: Vec<&Arc<dyn YouTubeClient>> = primary
-            .into_iter()
-            .chain(secondary_search)
-            .collect();
+        let tried: Vec<&Arc<dyn YouTubeClient>> =
+            primary.into_iter().chain(secondary_search).collect();
 
         let fallback = self.fallback_clients(&tried, false);
         if !fallback.is_empty() {

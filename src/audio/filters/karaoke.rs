@@ -2,7 +2,7 @@ use super::{
     AudioFilter,
     biquad::{BiquadCoeffs, BiquadState},
 };
-use crate::audio::constants::{TARGET_SAMPLE_RATE, MIX_BUFFER_SIZE};
+use crate::audio::constants::{MIX_BUFFER_SIZE, TARGET_SAMPLE_RATE};
 
 const MAX_OUTPUT_GAIN: f64 = crate::audio::constants::KARAOKE_MAX_OUTPUT_GAIN;
 
@@ -153,10 +153,10 @@ impl AudioFilter for KaraokeFilter {
                 out_r *= s;
             }
 
-            samples[offset] =
-                ((out_l * crate::audio::constants::KARAOKE_SCALE).round() as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-            samples[offset + 1] =
-                ((out_r * crate::audio::constants::KARAOKE_SCALE).round() as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            samples[offset] = ((out_l * crate::audio::constants::KARAOKE_SCALE).round() as i32)
+                .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            samples[offset + 1] = ((out_r * crate::audio::constants::KARAOKE_SCALE).round() as i32)
+                .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         }
 
         self.prev_gain = target;

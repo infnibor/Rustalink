@@ -39,10 +39,12 @@ impl BalancingIpRoutePlanner {
 
         let mut total_ips = 0;
         for cidr in cidrs.iter() {
-            let parsed = IpNet::from_str(cidr).or_else(|_| {
-                let suffix = if cidr.contains(':') { "/128" } else { "/32" };
-                IpNet::from_str(&format!("{}{}", cidr, suffix))
-            }).map_err(|e| format!("Invalid CIDR or IP '{}': {}", cidr, e))?;
+            let parsed = IpNet::from_str(cidr)
+                .or_else(|_| {
+                    let suffix = if cidr.contains(':') { "/128" } else { "/32" };
+                    IpNet::from_str(&format!("{}{}", cidr, suffix))
+                })
+                .map_err(|e| format!("Invalid CIDR or IP '{}': {}", cidr, e))?;
 
             let block_type = match parsed {
                 IpNet::V4(_) => "Inet4Address",

@@ -409,9 +409,7 @@ impl SourcePlugin for VkMusicSource {
             .find(|p| identifier.starts_with(p))
         {
             let query = identifier.strip_prefix(prefix).unwrap_or(identifier);
-            return self
-                .recommendations(query)
-                .await;
+            return self.recommendations(query).await;
         }
 
         if let Some(caps) = self.playlist_z_re.captures(identifier) {

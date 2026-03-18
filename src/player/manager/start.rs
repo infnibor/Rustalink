@@ -59,10 +59,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
             position: 0,
         });
 
-    let identifier = track_info
-        .uri
-        .as_ref()
-        .unwrap_or(&track_info.identifier);
+    let identifier = track_info.uri.as_ref().unwrap_or(&track_info.identifier);
 
     let playable = match timeout(
         Duration::from_secs(30),

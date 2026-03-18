@@ -8,9 +8,7 @@ use crate::{
     common::types::AnyResult,
     protocol::tracks::Track,
     sources::youtube::{
-        cipher::YouTubeCipherManager,
-        clients::common::ClientConfig,
-        oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
     },
 };
 
@@ -24,9 +22,7 @@ pub struct TvUnpluggedClient {
 
 impl TvUnpluggedClient {
     pub fn new(http: Arc<reqwest::Client>) -> Self {
-        Self {
-            http,
-        }
+        Self { http }
     }
 
     fn config(&self) -> ClientConfig<'static> {

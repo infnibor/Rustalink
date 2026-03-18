@@ -8,9 +8,7 @@ use crate::{
     common::types::AnyResult,
     protocol::tracks::Track,
     sources::youtube::{
-        cipher::YouTubeCipherManager,
-        clients::common::ClientConfig,
-        oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
     },
 };
 
@@ -98,7 +96,10 @@ impl YouTubeClient for WebParentToolsClient {
         context: &Value,
         oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<(Vec<Track>, String)>> {
-        core::standard_get_playlist(self, &self.http, playlist_id, context, oauth, || self.config()).await
+        core::standard_get_playlist(self, &self.http, playlist_id, context, oauth, || {
+            self.config()
+        })
+        .await
     }
 
     async fn resolve_url(
