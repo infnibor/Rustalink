@@ -1,0 +1,351 @@
+---
+title: Sources
+description: Configure credentials for music sources like YouTube, Spotify, Deezer, Tidal, and more.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Learn how to retrieve the tokens and credentials needed for each music source.
+
+## Source Credentials Guide
+
+Most sources work out of the box, but some require tokens or API keys for search and/or playback. Below is a step-by-step guide for each source that needs credentials.
+
+<Aside type="tip">
+All credentials go into your `config.toml` under the corresponding `[sources.<name>]` section.
+</Aside>
+
+---
+
+### YouTube
+
+YouTube supports an **OAuth device flow** built into Rustalink. This is needed for playback via the TV client.
+
+<Aside type="caution">
+Use a **burner Google account** — do not use your personal account.
+</Aside>
+
+**Option A — Automatic (recommended)**
+
+1. Set `get_oauth_token = true` in your config:
+   ```toml
+   [sources.youtube]
+   enabled = true
+   get_oauth_token = true
+   ```
+2. Start Rustalink. The console will print a URL and a code:
+   ```
+   1. Visit: https://www.google.com/device
+   2. Enter code: XXXX-XXXX
+   ```
+3. Open the URL in your browser, log in with a **burner account**, and enter the code.
+4. Rustalink will display the `refresh_token` in the console. Copy it.
+5. Paste it into your config and disable the flow:
+   ```toml
+   [sources.youtube]
+   enabled = true
+   get_oauth_token = false
+   refresh_tokens = ["your-refresh-token-here"]
+   ```
+
+**Option B — Manual**
+
+If you already have a refresh token (e.g. from another Lavalink instance), paste it directly:
+
+```toml
+[sources.youtube]
+enabled = true
+refresh_tokens = ["your-refresh-token"]
+```
+
+---
+
+### Spotify
+
+<Aside type="note">
+Spotify **does not require any credentials**. Rustalink handles authentication automatically using an anonymous session token.
+</Aside>
+
+Optionally you can configure a proxy:
+
+```toml
+[sources.spotify]
+enabled = true
+# proxy = { url = "http://proxy:8080", username = "user", password = "pass" }
+```
+
+---
+
+### Deezer
+
+Deezer requires an **ARL token** (authentication cookie) for playback.
+
+1. Open [deezer.com](https://www.deezer.com) and log in.
+2. Open your browser DevTools (`F12` → **Application** tab → **Cookies**).
+3. Find the cookie named `arl` on the `deezer.com` domain.
+4. Copy its value (a long alphanumeric string).
+5. Paste it into your config:
+   ```toml
+   [sources.deezer]
+   enabled = true
+   arls = ["your-arl-token"]
+   ```
+
+<Aside type="tip">
+You can provide **multiple ARLs** from different accounts for load balancing:
+```toml
+arls = ["arl-account-1", "arl-account-2"]
+```
+</Aside>
+
+You also need the `master_decryption_key` for FLAC playback (find it yourself — it is not provided here for legal reasons).
+
+---
+
+### Tidal
+
+Tidal supports a **built-in OAuth device flow**, similar to YouTube.
+
+**Option A — Automatic (recommended)**
+
+1. Set `get_oauth_token = true` in your config:
+   ```toml
+   [sources.tidal]
+   enabled = true
+   get_oauth_token = true
+   ```
+2. Start Rustalink. The console will print a login URL:
+   ```
+   1. Visit: https://login.tidal.com/activate?...
+   2. Log in and authorize the application.
+   ```
+3. Open the URL, log in with your Tidal account, and authorize.
+4. Rustalink will display the `refresh_token` in the console. Copy it.
+5. Paste it into your config and disable the flow:
+   ```toml
+   [sources.tidal]
+   enabled = true
+   get_oauth_token = false
+   refresh_token = "your-refresh-token"
+   ```
+
+**Option B — Manual**
+
+If you already have a refresh token, paste it directly:
+
+```toml
+[sources.tidal]
+enabled = true
+refresh_token = "your-refresh-token"
+```
+
+---
+
+### SoundCloud
+
+SoundCloud works without credentials (auto-discovery), but you can provide a custom `client_id`:
+
+1. Open [soundcloud.com](https://soundcloud.com) in your browser.
+2. Open DevTools (`F12` → **Network** tab).
+3. Play any track and look for API requests to `api-v2.soundcloud.com`.
+4. Find the `client_id` query parameter in any request URL.
+5. Paste it into your config:
+   ```toml
+   [sources.soundcloud]
+   enabled = true
+   client_id = "your-client-id"
+   ```
+
+---
+
+### Qobuz
+
+Qobuz requires a user token for playback. App credentials (`app_id` and `app_secret`) are optional overrides; by default they are automatically extracted from play.qobuz.com.
+
+1. Open [play.qobuz.com](https://play.qobuz.com) and log in.
+2. Open DevTools (`F12` → **Network** tab).
+3. Look for API requests to `www.qobuz.com/api.json/`.
+4. In the request headers, find the `X-User-Auth-Token` header → this is your `user_token`.
+
+Optionally, you can override the auto-detected Qobuz app credentials:
+
+- In the request URL parameters, find `app_id`.
+- For `app_secret`, inspect the Qobuz JavaScript bundle and search for the secret key.
+
+Configure:
+   ```toml
+   [sources.qobuz]
+   enabled = true
+   user_token = "your-user-token"
+   # Optional: override auto-detected app credentials
+   # app_id = "your-app-id"
+   # app_secret = "your-app-secret"
+   ```
+
+---
+
+### Yandex Music
+
+Yandex Music requires an OAuth access token.
+
+1. Go to [oauth.yandex.com/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d](https://oauth.yandex.com/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d).
+2. Log in with your Yandex account and authorize.
+3. After redirect, copy the `access_token` from the URL fragment.
+4. Configure:
+   ```toml
+   [sources.yandexmusic]
+   enabled = true
+   access_token = "your-oauth-token"
+   ```
+
+---
+
+### VK Music
+
+VK Music requires a user token and cookie from the browser.
+
+1. Open [vk.com](https://vk.com) and log in.
+2. Open DevTools (`F12` → **Network** tab).
+3. Look for a POST request to `/?act=web_token`.
+4. In the **Response**, copy the `access_token` field.
+5. In the **Request** headers, copy the full `Cookie` header value.
+6. Configure:
+   ```toml
+   [sources.vkmusic]
+   enabled = true
+   user_token = "your-vk-access-token"
+   user_cookie = "your-full-vk-cookie"
+   ```
+
+---
+
+### Apple Music
+
+Apple Music can work without credentials (metadata only), but providing a `media_api_token` enables full features.
+
+1. Open [music.apple.com](https://music.apple.com) in your browser.
+2. Open DevTools (`F12` → **Network** tab).
+3. Look for API requests to `amp-api.music.apple.com`.
+4. In the request headers, find the `Authorization` header starting with `Bearer`.
+5. Copy the token (everything after `Bearer `).
+6. Configure:
+   ```toml
+   [sources.applemusic]
+   enabled = true
+   media_api_token = "your-media-api-token"
+   ```
+
+---
+
+### Last.fm
+
+Last.fm requires an API key for search functionality.
+
+1. Go to [last.fm/api/account/create](https://www.last.fm/api/account/create).
+2. Fill in the application form (name, description, callback URL can be anything).
+3. After creation, copy your **API Key**.
+4. Configure:
+   ```toml
+   [sources.lastfm]
+   enabled = true
+   api_key = "your-lastfm-api-key"
+   ```
+
+---
+
+### Twitch
+
+Twitch works without credentials (auto-discovery from twitch.tv), but you can provide a custom `client_id`:
+
+1. Go to [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) and log in.
+2. Register a new application.
+3. Copy the **Client ID**.
+4. Configure:
+   ```toml
+   [sources.twitch]
+   enabled = true
+   client_id = "your-client-id"
+   ```
+
+---
+
+### Audius
+
+Audius works by default but you can provide a custom app name:
+
+1. Go to [docs.audius.org](https://docs.audius.org) to register an app name.
+2. Configure:
+   ```toml
+   [sources.audius]
+   enabled = true
+   app_name = "your-app-name"
+   ```
+
+---
+
+### Pandora
+
+ Pandora usually works out of the box. CSRF/auth tokens are fetched automatically for search.
+
+ If you have issues with Pandora search or need to override the automatically-detected token, you can optionally provide a custom CSRF token:
+
+1. Open [pandora.com](https://www.pandora.com) in your browser (may require a US VPN).
+2. Open DevTools (`F12` → **Network** tab).
+3. Look for API requests and find the `csrftoken` cookie or header.
+4. Configure:
+   ```toml
+   [sources.pandora]
+   enabled = true
+   # Optional manual override:
+   csrf_token = "your-csrf-token"
+   ```
+
+---
+
+### Amazon Music
+
+Amazon Music supports search by default. For direct playback, a custom API URL is required.
+
+```toml
+[sources.amazonmusic]
+enabled = true
+# api_url = "http://localhost:3000/"
+```
+
+<Aside type="note">
+The custom API URL for Amazon Music direct playback is self-hosted. Refer to the project documentation for setup instructions.
+</Aside>
+
+---
+
+### JioSaavn
+
+JioSaavn works without credentials for basic usage. For direct streaming you can configure a custom API URL or a decryption key:
+
+```toml
+[sources.jiosaavn]
+enabled = true
+# apiUrl = "http://localhost:3000/"
+# decryption = { secretKey = "your-secret-key" }
+```
+
+---
+
+### Sources Without Credentials
+
+The following sources work **out of the box** with no credentials needed:
+
+| Source | Notes |
+| :--- | :--- |
+| **Gaana** | Works automatically |
+| **Shazam** | Works automatically |
+| **Mixcloud** | Works automatically |
+| **Bandcamp** | Works automatically |
+| **Audiomack** | Works automatically |
+| **NetEase** | Works automatically |
+| **Anghami** | Works automatically |
+| **HTTP** | Direct URL playback |
+| **Local** | Local file playback |
+| **Google TTS** | Text-to-speech |
+| **Flowery TTS** | Text-to-speech |
+| **Reddit** | Works automatically |
