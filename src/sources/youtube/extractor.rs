@@ -301,11 +301,11 @@ pub fn extract_track(item: &Value, source_name: &str) -> Option<Track> {
 
     // Improved author extraction
     let author = if let Some(long_byline) = renderer.get("longBylineText") {
-        get_text(long_byline)
+        get_first_text(long_byline)
     } else if let Some(short_byline) = renderer.get("shortBylineText") {
-        get_text(short_byline)
+        get_first_text(short_byline)
     } else if let Some(owner) = renderer.get("ownerText") {
-        get_text(owner)
+        get_first_text(owner)
     } else if let Some(flex) = renderer
         .get("flexColumns")
         .and_then(|c| c.get(1))
@@ -320,7 +320,7 @@ pub fn extract_track(item: &Value, source_name: &str) -> Option<Track> {
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_string())
         } else {
-            get_text(flex)
+            get_first_text(flex)
         }
     } else {
         None
@@ -394,6 +394,23 @@ fn get_text(obj: &Value) -> Option<String> {
             }
         }
         return Some(text);
+    }
+    None
+}
+
+fn get_first_text(obj: &Value) -> Option<String> {
+    if let Some(s) = obj.as_str() {
+        return Some(s.to_string());
+    }
+    if let Some(simple_text) = obj.get("simpleText").and_then(|v| v.as_str()) {
+        return Some(simple_text.to_string());
+    }
+    if let Some(runs) = obj.get("runs").and_then(|v| v.as_array()) {
+        return runs
+            .first()
+            .and_then(|run| run.get("text"))
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_string());
     }
     None
 }
