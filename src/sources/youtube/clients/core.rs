@@ -356,14 +356,14 @@ where
         browse_req = browse_req.header("X-Goog-Visitor-Id", vd);
     }
 
-    if let Ok(res) = browse_req.json(&browse_body).send().await {
-        if res.status().is_success() {
-            let body: Value = res.json().await?;
-            if let Some(result) =
-                crate::sources::youtube::extractor::extract_from_browse(&body, "youtube")
-            {
-                return Ok(Some(result));
-            }
+    if let Ok(res) = browse_req.json(&browse_body).send().await
+        && res.status().is_success()
+    {
+        let body: Value = res.json().await?;
+        if let Some(result) =
+            crate::sources::youtube::extractor::extract_from_browse(&body, "youtube")
+        {
+            return Ok(Some(result));
         }
     }
 
@@ -388,14 +388,13 @@ where
         next_req = next_req.header("X-Goog-Visitor-Id", vd);
     }
 
-    if let Ok(res) = next_req.json(&next_body).send().await {
-        if res.status().is_success() {
-            let body: Value = res.json().await?;
-            if let Some(result) =
-                crate::sources::youtube::extractor::extract_from_next(&body, "youtube")
-            {
-                return Ok(Some(result));
-            }
+    if let Ok(res) = next_req.json(&next_body).send().await
+        && res.status().is_success()
+    {
+        let body: Value = res.json().await?;
+        if let Some(result) = crate::sources::youtube::extractor::extract_from_next(&body, "youtube")
+        {
+            return Ok(Some(result));
         }
     }
 

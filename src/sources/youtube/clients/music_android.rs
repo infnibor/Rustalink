@@ -402,19 +402,19 @@ impl YouTubeClient for MusicAndroidClient {
 
         let next_req = next_req.json(&next_body);
 
-        if let Ok(res) = next_req.send().await {
-            if res.status().is_success() {
-                let body: Value = res.json().await?;
-                if let Some(result) =
-                    crate::sources::youtube::extractor::extract_from_next(&body, "youtube")
-                {
-                    return Ok(Some(result));
-                }
-                tracing::debug!(
-                    "MusicAndroid: /next endpoint returned but extraction failed for playlist {}",
-                    playlist_id
-                );
+        if let Ok(res) = next_req.send().await
+            && res.status().is_success()
+        {
+            let body: Value = res.json().await?;
+            if let Some(result) =
+                crate::sources::youtube::extractor::extract_from_next(&body, "youtube")
+            {
+                return Ok(Some(result));
             }
+            tracing::debug!(
+                "MusicAndroid: /next endpoint returned but extraction failed for playlist {}",
+                playlist_id
+            );
         }
 
         let browse_body = json!({
@@ -435,19 +435,19 @@ impl YouTubeClient for MusicAndroidClient {
             browse_req = browse_req.header("X-Goog-Visitor-Id", vd);
         }
 
-        if let Ok(res) = browse_req.json(&browse_body).send().await {
-            if res.status().is_success() {
-                let body: Value = res.json().await?;
-                if let Some(result) =
-                    crate::sources::youtube::extractor::extract_from_browse(&body, "youtube")
-                {
-                    return Ok(Some(result));
-                }
-                tracing::debug!(
-                    "MusicAndroid: /browse endpoint returned but extraction failed for playlist {}",
-                    playlist_id
-                );
+        if let Ok(res) = browse_req.json(&browse_body).send().await
+            && res.status().is_success()
+        {
+            let body: Value = res.json().await?;
+            if let Some(result) =
+                crate::sources::youtube::extractor::extract_from_browse(&body, "youtube")
+            {
+                return Ok(Some(result));
             }
+            tracing::debug!(
+                "MusicAndroid: /browse endpoint returned but extraction failed for playlist {}",
+                playlist_id
+            );
         }
 
         tracing::warn!(
