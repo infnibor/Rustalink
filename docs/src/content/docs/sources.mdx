@@ -160,21 +160,26 @@ SoundCloud works without credentials (auto-discovery), but you can provide a cus
 
 ### Qobuz
 
-Qobuz requires a user token and app credentials for playback.
+Qobuz requires a user token for playback. App credentials (`app_id` and `app_secret`) are optional overrides; by default they are automatically extracted from play.qobuz.com.
 
 1. Open [play.qobuz.com](https://play.qobuz.com) and log in.
 2. Open DevTools (`F12` → **Network** tab).
 3. Look for API requests to `www.qobuz.com/api.json/`.
 4. In the request headers, find the `X-User-Auth-Token` header → this is your `user_token`.
-5. In the request URL parameters, find `app_id`.
-6. For `app_secret`, inspect the Qobuz JavaScript bundle and search for the secret key.
-7. Configure:
+
+Optionally, you can override the auto-detected Qobuz app credentials:
+
+- In the request URL parameters, find `app_id`.
+- For `app_secret`, inspect the Qobuz JavaScript bundle and search for the secret key.
+
+Configure:
    ```toml
    [sources.qobuz]
    enabled = true
    user_token = "your-user-token"
-   app_id = "your-app-id"
-   app_secret = "your-app-secret"
+   # Optional: override auto-detected app credentials
+   # app_id = "your-app-id"
+   # app_secret = "your-app-secret"
    ```
 
 ---
