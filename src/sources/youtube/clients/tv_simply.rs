@@ -3,15 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use super::{YouTubeClient, common::INNERTUBE_API};
+use super::{YouTubeClient, core};
 use crate::{
     common::types::AnyResult,
     protocol::tracks::Track,
     sources::youtube::{
-        cipher::YouTubeCipherManager,
-        clients::common::ClientConfig,
-        extractor::{extract_from_next, extract_from_player, extract_track, find_section_list},
-        oauth::YouTubeOAuth,
+        cipher::YouTubeCipherManager, clients::common::ClientConfig, oauth::YouTubeOAuth,
     },
 };
 
@@ -21,18 +18,14 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 pub struct TvSimplyClient {
     http: Arc<reqwest::Client>,
-    cipher_manager: Arc<YouTubeCipherManager>,
 }
 
 impl TvSimplyClient {
-    pub fn new(http: Arc<reqwest::Client>, cipher_manager: Arc<YouTubeCipherManager>) -> Self {
-        Self {
-            http,
-            cipher_manager,
-        }
+    pub fn new(http: Arc<reqwest::Client>) -> Self {
+        Self { http }
     }
 
-    fn config(&self) -> ClientConfig<'_> {
+    fn config(&self) -> ClientConfig<'static> {
         ClientConfig {
             client_name: CLIENT_NAME,
             client_version: CLIENT_VERSION,
@@ -41,34 +34,6 @@ impl TvSimplyClient {
             attestation_request: Some(json!({ "omitBotguardData": true })),
             ..Default::default()
         }
-    }
-
-    async fn player_request(
-        &self,
-        video_id: &str,
-        visitor_data: Option<&str>,
-        signature_timestamp: Option<u32>,
-    ) -> AnyResult<Value> {
-        let encrypted_host_flags = self.fetch_encrypted_host_flags(video_id).await;
-
-        crate::sources::youtube::clients::common::make_player_request(
-            crate::sources::youtube::clients::common::PlayerRequestOptions {
-                http: &self.http,
-                config: &self.config(),
-                video_id,
-                params: Some("2AMB"),
-                visitor_data,
-                signature_timestamp,
-                auth_header: None,
-                referer: None,
-                origin: Some("https://www.youtube.com"),
-                po_token: None,
-                encrypted_host_flags,
-                attestation_request: Some(json!({ "omitBotguardData": true })),
-                serialized_third_party_embed_config: false,
-            },
-        )
-        .await
     }
 
     async fn fetch_encrypted_host_flags(&self, video_id: &str) -> Option<String> {
@@ -109,116 +74,43 @@ impl YouTubeClient for TvSimplyClient {
         &self,
         query: &str,
         context: &Value,
-        _oauth: Arc<YouTubeOAuth>,
+        oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Vec<Track>> {
-        let visitor_data = context
-            .get("client")
-            .and_then(|c| c.get("visitorData"))
-            .and_then(|v| v.as_str())
-            .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
-
-        let body = json!({
-            "context": self.config().build_context(visitor_data),
-            "query": query,
-            "params": "EgIQAfABAQ=="
-        });
-
-        let url = format!("{}/youtubei/v1/search?prettyPrint=false", INNERTUBE_API);
-
-        let res = self
-            .http
-            .post(&url)
-            .header("User-Agent", USER_AGENT)
-            .header("X-YouTube-Client-Name", "TVHTML5_SIMPLY")
-            .header("X-YouTube-Client-Version", CLIENT_VERSION)
-            .header("X-Goog-Api-Format-Version", "2")
-            .json(&body)
-            .send()
-            .await?;
-
-        if !res.status().is_success() {
-            return Err(format!("TvSimply search failed: {}", res.status()).into());
-        }
-
-        let response: Value = res.json().await?;
-        let mut tracks = Vec::new();
-
-        if let Some(section_list) = find_section_list(&response)
-            && let Some(contents) = section_list.get("contents").and_then(|c| c.as_array())
-        {
-            for section in contents {
-                if let Some(items) = section
-                    .get("itemSectionRenderer")
-                    .and_then(|i| i.get("contents"))
-                    .and_then(|c| c.as_array())
-                {
-                    for item in items {
-                        if let Some(track) = extract_track(item, "youtube") {
-                            tracks.push(track);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(tracks)
+        core::standard_search(self, &self.http, query, context, oauth, || self.config()).await
     }
 
     async fn get_track_info(
         &self,
         track_id: &str,
         context: &Value,
-        _oauth: Arc<YouTubeOAuth>,
+        oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<Track>> {
-        let visitor_data = context
-            .get("client")
-            .and_then(|c| c.get("visitorData"))
-            .and_then(|v| v.as_str())
-            .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
-
-        let signature_timestamp = self.cipher_manager.get_signature_timestamp().await.ok();
-        let body = self
-            .player_request(track_id, visitor_data, signature_timestamp)
-            .await?;
-
-        Ok(extract_from_player(&body, "youtube"))
+        let encrypted_host_flags = self.fetch_encrypted_host_flags(track_id).await;
+        core::standard_get_track_info(
+            self,
+            core::StandardPlayerOptions {
+                http: &self.http,
+                track_id,
+                context,
+                oauth,
+                signature_timestamp: None,
+                encrypted_host_flags,
+                config_builder: || self.config(),
+            },
+        )
+        .await
     }
 
     async fn get_playlist(
         &self,
         playlist_id: &str,
         context: &Value,
-        _oauth: Arc<YouTubeOAuth>,
+        oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<(Vec<Track>, String)>> {
-        let visitor_data = context
-            .get("client")
-            .and_then(|c| c.get("visitorData"))
-            .and_then(|v| v.as_str())
-            .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
-
-        let body = json!({
-            "context": self.config().build_context(visitor_data),
-            "playlistId": playlist_id,
-        });
-
-        let url = format!("{}/youtubei/v1/next?prettyPrint=false", INNERTUBE_API);
-
-        let res = self
-            .http
-            .post(&url)
-            .header("User-Agent", USER_AGENT)
-            .header("X-YouTube-Client-Name", "TVHTML5_SIMPLY")
-            .header("X-YouTube-Client-Version", CLIENT_VERSION)
-            .json(&body)
-            .send()
-            .await?;
-
-        if !res.status().is_success() {
-            return Ok(None);
-        }
-
-        let response: Value = res.json().await?;
-        Ok(extract_from_next(&response, "youtube"))
+        core::standard_get_playlist(self, &self.http, playlist_id, context, oauth, || {
+            self.config()
+        })
+        .await
     }
 
     async fn resolve_url(
@@ -232,62 +124,27 @@ impl YouTubeClient for TvSimplyClient {
 
     async fn get_track_url(
         &self,
-        _track_id: &str,
-        _context: &Value,
-        _cipher_manager: Arc<YouTubeCipherManager>,
-        _oauth: Arc<YouTubeOAuth>,
+        track_id: &str,
+        context: &Value,
+        cipher_manager: Arc<YouTubeCipherManager>,
+        oauth: Arc<YouTubeOAuth>,
     ) -> AnyResult<Option<String>> {
-        // let visitor_data = context
-        //     .get("client")
-        //     .and_then(|c| c.get("visitorData"))
-        //     .and_then(|v| v.as_str())
-        //     .or_else(|| context.get("visitorData").and_then(|v| v.as_str()));
-        //
-        // let body = self.player_request(track_id, visitor_data, None).await?;
-        //
-        // let streaming_data = match body.get("streamingData") {
-        //     Some(sd) => sd,
-        //     None => {
-        //         tracing::warn!(
-        //             "TvSimply: No streamingData found for {}. Playability Status: {:?}",
-        //             track_id,
-        //             body.get("playabilityStatus")
-        //         );
-        //         return Ok(None);
-        //     }
-        // };
-        //
-        // if let Some(hls) = streaming_data
-        //     .get("hlsManifestUrl")
-        //     .and_then(|v| v.as_str())
-        // {
-        //     return Ok(Some(hls.to_string()));
-        // }
-        //
-        // let adaptive = streaming_data
-        //     .get("adaptiveFormats")
-        //     .and_then(|v| v.as_array());
-        // let formats = streaming_data.get("formats").and_then(|v| v.as_array());
-        //
-        // if let Some(best) =
-        //     crate::sources::youtube::clients::common::select_best_audio_format(adaptive, formats)
-        // {
-        //     return crate::sources::youtube::clients::common::resolve_format_url(
-        //         best,
-        //         &format!("https://www.youtube.com/watch?v={}", track_id),
-        //         &self.cipher_manager,
-        //     )
-        //     .await;
-        // }
-        //
-        // tracing::warn!(
-        //     "TvSimply: No suitable audio format found for {}. formats: {:?}",
-        //     track_id,
-        //     streaming_data.get("formats")
-        // );
-
-        tracing::debug!("{} client does not provide direct track URLs", self.name());
-        Ok(None)
+        let signature_timestamp = cipher_manager.get_signature_timestamp().await.ok();
+        let encrypted_host_flags = self.fetch_encrypted_host_flags(track_id).await;
+        core::standard_get_track_url(
+            self,
+            core::StandardUrlOptions {
+                http: &self.http,
+                track_id,
+                context,
+                cipher_manager,
+                oauth,
+                signature_timestamp,
+                encrypted_host_flags,
+                config_builder: || self.config(),
+            },
+        )
+        .await
     }
 
     async fn get_player_body(
@@ -296,7 +153,26 @@ impl YouTubeClient for TvSimplyClient {
         visitor_data: Option<&str>,
         _oauth: Arc<YouTubeOAuth>,
     ) -> Option<serde_json::Value> {
-        self.player_request(track_id, visitor_data, None).await.ok()
+        let encrypted_host_flags = self.fetch_encrypted_host_flags(track_id).await;
+        crate::sources::youtube::clients::common::make_player_request(
+            crate::sources::youtube::clients::common::PlayerRequestOptions {
+                http: &self.http,
+                config: &self.config(),
+                video_id: track_id,
+                params: Some("2AMB"),
+                visitor_data,
+                signature_timestamp: None,
+                auth_header: None,
+                referer: None,
+                origin: Some("https://www.youtube.com"),
+                po_token: None,
+                encrypted_host_flags,
+                attestation_request: Some(json!({ "omitBotguardData": true })),
+                serialized_third_party_embed_config: false,
+            },
+        )
+        .await
+        .ok()
     }
 }
 
@@ -310,8 +186,8 @@ mod tests {
     #[tokio::test]
     async fn test_search() {
         let http = Arc::new(reqwest::Client::new());
-        let cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
-        let client = TvSimplyClient::new(http, cipher);
+        let _cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
+        let client = TvSimplyClient::new(http);
         let oauth = Arc::new(YouTubeOAuth::new(vec![]));
 
         let result = client.search("test", &json!({}), oauth).await.unwrap();
@@ -321,8 +197,8 @@ mod tests {
     #[tokio::test]
     async fn test_playlist() {
         let http = Arc::new(reqwest::Client::new());
-        let cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
-        let client = TvSimplyClient::new(http, cipher);
+        let _cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
+        let client = TvSimplyClient::new(http);
         let oauth = Arc::new(YouTubeOAuth::new(vec![]));
 
         // Use a known playlist ID
@@ -348,14 +224,17 @@ mod get_track_tests {
     #[tokio::test]
     async fn test_get_track_url() {
         let http = Arc::new(reqwest::Client::new());
-        let cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
-        let client = TvSimplyClient::new(http, cipher.clone());
+        let _cipher = Arc::new(YouTubeCipherManager::new(YouTubeCipherConfig::default()));
+        let client = TvSimplyClient::new(http);
         //let oauth = Arc::new(YouTubeOAuth::new(vec![]));
 
         let body = client
-            .player_request("3Z_x7vBqr6E", None, None)
-            .await
-            .unwrap();
-        println!("Body: {}", serde_json::to_string_pretty(&body).unwrap());
+            .get_player_body("3Z_x7vBqr6E", None, Arc::new(YouTubeOAuth::new(vec![])))
+            .await;
+        assert!(body.is_some());
+        println!(
+            "Body: {}",
+            serde_json::to_string_pretty(&body.unwrap()).unwrap()
+        );
     }
 }

@@ -22,23 +22,28 @@ use tracing::info;
 async fn main() -> AnyResult<()> {
     let config = rustalink::config::AppConfig::load().await?;
 
-    rustalink::common::logger::init(
-        config
-            .logging
-            .as_ref()
-            .unwrap_or(&rustalink::config::LoggingConfig::default()),
-    );
+    let default_logging = rustalink::config::LoggingConfig::default();
+    rustalink::common::logger::init(config.logging.as_ref().unwrap_or(&default_logging));
 
     rustalink::common::banner::print_banner(&rustalink::common::banner::BannerInfo::default());
 
     info!("Rustalink Server starting...");
 
     let routeplanner = if config.route_planner.enabled && !config.route_planner.cidrs.is_empty() {
-        Some(
-            Arc::new(rustalink::routeplanner::BalancingIpRoutePlanner::new(
-                config.route_planner.cidrs.clone(),
-            )) as Arc<dyn rustalink::routeplanner::RoutePlanner>,
-        )
+        match rustalink::routeplanner::BalancingIpRoutePlanner::new(
+            config.route_planner.cidrs.clone(),
+        ) {
+            Ok(planner) => {
+                Some(Arc::new(planner) as Arc<dyn rustalink::routeplanner::RoutePlanner>)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to initialize route planner: {}. Running without IP rotation.",
+                    e
+                );
+                None
+            }
+        }
     } else {
         None
     };

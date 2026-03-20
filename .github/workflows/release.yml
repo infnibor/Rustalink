@@ -257,6 +257,7 @@ jobs:
           {
             "username": "${{ github.event.repository.name }}",
             "avatar_url": "https://github.com/${{ github.repository_owner }}.png",
+            "content": "<@&942119976825946143>",
             "embeds": [
               {
                 "author": {

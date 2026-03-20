@@ -27,7 +27,7 @@ pub mod track;
 use cipher::YouTubeCipherManager;
 use clients::{
     YouTubeClient, android::AndroidClient, android_vr::AndroidVrClient, ios::IosClient,
-    music_android::MusicAndroidClient, tv::TvClient, tv_cast::TvCastClient,
+    music_android::MusicAndroidClient, mweb::MWebClient, tv::TvClient, tv_cast::TvCastClient,
     tv_embedded::TvEmbeddedClient, tv_simply::TvSimplyClient, tv_unplugged::TvUnpluggedClient,
     web::WebClient, web_embedded::WebEmbeddedClient, web_parent_tools::WebParentToolsClient,
     web_remix::WebRemixClient,
@@ -108,9 +108,10 @@ impl YouTubeSource {
                     cipher_url.clone(),
                     cipher_token.clone(),
                 ))),
-                "MWEB" | "MUSIC_WEB" | "WEB_REMIX" | "REMIX" => {
+                "WEB_REMIX" | "REMIX" | "MUSIC_WEB" => {
                     Some(Arc::new(WebRemixClient::new(http.clone())))
                 }
+                "MWEB" => Some(Arc::new(MWebClient::new(http.clone()))),
                 "ANDROID" => Some(Arc::new(AndroidClient::new(http.clone()))),
                 "IOS" => Some(Arc::new(IosClient::new(http.clone()))),
                 "TV" | "TVHTML5" => Some(Arc::new(TvClient::new(http.clone()))),
@@ -118,14 +119,10 @@ impl YouTubeSource {
                 "TVHTML5_SIMPLY_EMBEDDED_PLAYER" | "TV_EMBEDDED" => {
                     Some(Arc::new(TvEmbeddedClient::new(http.clone())))
                 }
-                "TVHTML5_SIMPLY" | "TV_SIMPLY" => Some(Arc::new(TvSimplyClient::new(
-                    http.clone(),
-                    cipher_manager.clone(),
-                ))),
-                "TVHTML5_UNPLUGGED" | "TV_UNPLUGGED" => Some(Arc::new(TvUnpluggedClient::new(
-                    http.clone(),
-                    cipher_manager.clone(),
-                ))),
+                "TVHTML5_SIMPLY" | "TV_SIMPLY" => Some(Arc::new(TvSimplyClient::new(http.clone()))),
+                "TVHTML5_UNPLUGGED" | "TV_UNPLUGGED" => {
+                    Some(Arc::new(TvUnpluggedClient::new(http.clone())))
+                }
                 "MUSIC" | "MUSIC_ANDROID" | "ANDROID_MUSIC" => {
                     Some(Arc::new(MusicAndroidClient::new(http.clone())))
                 }
@@ -153,6 +150,15 @@ impl YouTubeSource {
             tracing::warn!("No valid YouTube search clients configured! Fallback to Web.");
             search_clients.push(Arc::new(WebClient::new(http.clone())));
         }
+
+        let search_client_names: Vec<String> = search_clients
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect();
+        tracing::debug!(
+            "YouTube Search Clients initialized: {:?}",
+            search_client_names
+        );
 
         let mut playback_clients = Vec::new();
         for name in &config.clients.playback {
@@ -493,8 +499,12 @@ impl YouTubeSource {
             |c: &Arc<dyn YouTubeClient>| c.name().contains("Music") || c.name().contains("Remix");
 
         if prefer_music {
-            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
             let mut music_clients: Vec<&Arc<dyn YouTubeClient>> = Vec::new();
+            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            tracing::debug!(
+                "Search: prefer_music=true. search_clients count: {}",
+                self.search_clients.len()
+            );
 
             for c in &self.music_search_clients {
                 if seen.insert(c.name()) {
@@ -548,7 +558,30 @@ impl YouTubeSource {
             }
         }
 
-        let fallback = self.fallback_clients(&primary, false);
+        let mut seen_search: std::collections::HashSet<&str> =
+            primary.iter().map(|c| c.name()).collect();
+        let secondary_search: Vec<&Arc<dyn YouTubeClient>> = self
+            .search_clients
+            .iter()
+            .filter(|c| is_music(c) && seen_search.insert(c.name()))
+            .collect();
+
+        for client in &secondary_search {
+            if !client.can_handle_request(identifier) {
+                continue;
+            }
+            tracing::debug!("Secondary search '{}' with {}", query, client.name());
+            match client.search(query, context, self.oauth.clone()).await {
+                Ok(tracks) if !tracks.is_empty() => return LoadResult::Search(tracks),
+                Ok(_) => continue,
+                Err(e) => tracing::warn!("Secondary search error with {}: {}", client.name(), e),
+            }
+        }
+
+        let tried: Vec<&Arc<dyn YouTubeClient>> =
+            primary.into_iter().chain(secondary_search).collect();
+
+        let fallback = self.fallback_clients(&tried, false);
         if !fallback.is_empty() {
             tracing::debug!(
                 "All search clients failed for '{}', trying fallback clients",

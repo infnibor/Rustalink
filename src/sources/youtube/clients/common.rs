@@ -24,6 +24,7 @@ pub struct ClientConfig<'a> {
     pub gl: &'a str,
     pub utc_offset_minutes: Option<i32>,
     pub third_party_embed_url: Option<&'a str>,
+    pub client_screen: Option<&'a str>,
     pub attestation_request: Option<Value>,
 }
 
@@ -44,6 +45,7 @@ impl<'a> Default for ClientConfig<'a> {
             gl: "US",
             utc_offset_minutes: None,
             third_party_embed_url: None,
+            client_screen: None,
             attestation_request: None,
         }
     }
@@ -80,6 +82,9 @@ impl<'a> ClientConfig<'a> {
             }
             if let Some(v) = self.utc_offset_minutes {
                 obj.insert("utcOffsetMinutes".to_string(), v.into());
+            }
+            if let Some(v) = self.client_screen {
+                obj.insert("clientScreen".to_string(), v.into());
             }
             if let Some(vd) = visitor_data {
                 obj.insert("visitorData".to_string(), vd.into());

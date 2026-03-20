@@ -9,8 +9,9 @@ use crate::protocol::{
     tracks::TrackInfo,
 };
 
-static VIDEO_ID_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r#""videoId":"([^"]+)""#).unwrap());
+static VIDEO_ID_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#""videoId":"([^"]+)""#).expect("invalid VIDEO_ID_RE regex pattern")
+});
 
 const YTM_DOMAIN: &str = "https://music.youtube.com";
 const YTM_BASE_API: &str = "https://music.youtube.com/youtubei/v1/";

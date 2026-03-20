@@ -14,8 +14,9 @@ use crate::{
     sources::youtube::clients::common::{resolve_format_url, select_best_audio_format},
 };
 
-static RANGE_RE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"bytes=(\d+)-(\d+)?").expect("invalid regex"));
+static RANGE_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"bytes=(\d+)-(\d+)?").expect("invalid RANGE_RE regex pattern")
+});
 
 pub async fn get_youtube_info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     tracing::info!("GET /youtube");

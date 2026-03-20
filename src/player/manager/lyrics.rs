@@ -52,6 +52,7 @@ pub fn spawn_lyrics_fetch(
                 }),
             }
         } else {
+            tracing::debug!("Lyrics fetch returned None for track: {}", track_info.title);
             protocol::OutgoingMessage::Event {
                 event: Box::new(RustalinkEvent::LyricsNotFound { guild_id }),
             }

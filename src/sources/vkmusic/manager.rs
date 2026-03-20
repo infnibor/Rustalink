@@ -399,7 +399,8 @@ impl SourcePlugin for VkMusicSource {
             .into_iter()
             .find(|p| identifier.starts_with(p))
         {
-            return self.search(identifier.strip_prefix(prefix).unwrap()).await;
+            let query = identifier.strip_prefix(prefix).unwrap_or(identifier);
+            return self.search(query).await;
         }
 
         if let Some(prefix) = self
@@ -407,9 +408,8 @@ impl SourcePlugin for VkMusicSource {
             .into_iter()
             .find(|p| identifier.starts_with(p))
         {
-            return self
-                .recommendations(identifier.strip_prefix(prefix).unwrap())
-                .await;
+            let query = identifier.strip_prefix(prefix).unwrap_or(identifier);
+            return self.recommendations(query).await;
         }
 
         if let Some(caps) = self.playlist_z_re.captures(identifier) {

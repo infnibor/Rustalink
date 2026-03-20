@@ -1,8 +1,10 @@
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::OnceLock,
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use crate::audio::constants::{MAX_BUCKET_ENTRIES, MAX_POOL_BYTES, POOL_IDLE_CLEAR_SECS};
 
@@ -27,7 +29,8 @@ impl PoolInner {
     }
 
     fn aligned_size(size: usize) -> usize {
-        size.max(1024).next_power_of_two()
+        let aligned = size.max(1024).next_power_of_two();
+        aligned.min(1024 * 1024)
     }
 
     fn needs_cleanup(&self) -> bool {
@@ -95,7 +98,7 @@ impl BufferPool {
     }
 
     pub fn acquire(&self, size: usize) -> Vec<u8> {
-        let mut g = self.inner.lock().unwrap();
+        let mut g = self.inner.lock();
         if g.needs_cleanup() {
             g.cleanup();
         }
@@ -103,11 +106,11 @@ impl BufferPool {
     }
 
     pub fn release(&self, buf: Vec<u8>) {
-        self.inner.lock().unwrap().release(buf);
+        self.inner.lock().release(buf);
     }
 
     pub fn stats(&self) -> PoolStats {
-        let g = self.inner.lock().unwrap();
+        let g = self.inner.lock();
         PoolStats {
             total_bytes: g.total_bytes,
             buckets: g.buckets.len(),

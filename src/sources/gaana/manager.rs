@@ -369,6 +369,26 @@ impl GaanaSource {
         }
     }
 
+    fn extract_isrc(&self, json: &Value) -> Option<String> {
+        if let Some(isrc) = json.get("isrc").and_then(|v| v.as_str()) {
+            return Some(isrc.to_owned());
+        }
+
+        if let Some(info) = json.get("entity_info").and_then(|v| v.as_array()) {
+            return info.iter().find_map(|e| {
+                if e.get("key").and_then(|k| k.as_str()) == Some("isrc") {
+                    e.get("value")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_owned())
+                } else {
+                    None
+                }
+            });
+        }
+
+        None
+    }
+
     fn parse_track(&self, json: &Value) -> Option<Track> {
         let id = json
             .get("track_id")
@@ -427,6 +447,7 @@ impl GaanaSource {
                     .filter(|s| !s.is_empty())
             })
             .map(|s| s.to_owned());
+        let isrc = self.extract_isrc(json);
 
         let track_info = TrackInfo {
             identifier: id,
@@ -438,7 +459,7 @@ impl GaanaSource {
             title: title.to_owned(),
             uri,
             artwork_url,
-            isrc: None,
+            isrc,
             source_name: "gaana".to_owned(),
         };
 
@@ -490,6 +511,8 @@ impl GaanaSource {
             .and_then(|v| v.as_str())
             .map(|s| s.to_owned());
 
+        let isrc = self.extract_isrc(json);
+
         let track_info = TrackInfo {
             identifier: id,
             is_seekable: true,
@@ -500,7 +523,7 @@ impl GaanaSource {
             title: title.to_owned(),
             uri,
             artwork_url,
-            isrc: None,
+            isrc,
             source_name: "gaana".to_owned(),
         };
 

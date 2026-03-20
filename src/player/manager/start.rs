@@ -59,10 +59,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
             position: 0,
         });
 
-    let identifier = track_info
-        .uri
-        .clone()
-        .unwrap_or_else(|| track_info.identifier.clone());
+    let identifier = track_info.uri.as_ref().unwrap_or(&track_info.identifier);
 
     let playable = match timeout(
         Duration::from_secs(30),
@@ -83,7 +80,7 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
             send_load_failed(
                 player,
                 &config.session,
-                format!("Track resolution timed out: {identifier}"),
+                format!("Track resolution timed out: {}", identifier),
             )
             .await;
             return;
@@ -112,6 +109,9 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
             is_buffering,
             player.config.clone(),
         );
+        mixer
+            .stuck_detector
+            .set_threshold(player.config.stuck_threshold_ms);
     }
 
     player.track_handle = Some(handle.clone());
@@ -146,11 +146,15 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
     spawn_lyrics_fetch(
         player.lyrics_subscribed.clone(),
         player.lyrics_data.clone(),
-        track_info.clone(),
+        track_info,
         config.lyrics_manager,
         config.session.clone(),
         player.guild_id.clone(),
     );
+
+    let engine = player.engine.lock().await;
+    let mixer = engine.mixer.lock().await;
+    let stuck_detector = mixer.stuck_detector.clone();
 
     let ctx = MonitorCtx {
         guild_id: player.guild_id.clone(),
@@ -160,12 +164,12 @@ pub async fn start_playback(player: &mut PlayerContext, config: PlaybackStartCon
         track: track_response,
         stop_signal: player.stop_signal.clone(),
         ping: player.ping.clone(),
-        stuck_threshold_ms: player.config.stuck_threshold_ms,
         update_every_n: (config.update_interval_secs * 2).max(1),
         lyrics_subscribed: player.lyrics_subscribed.clone(),
         lyrics_data: player.lyrics_data.clone(),
         last_lyric_index: player.last_lyric_index.clone(),
         end_time_ms: player.end_time,
+        stuck_detector,
     };
 
     let track_task = tokio::spawn(monitor_loop(ctx));
